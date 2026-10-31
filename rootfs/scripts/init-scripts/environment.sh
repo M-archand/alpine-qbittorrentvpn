@@ -28,6 +28,10 @@ if [[ -n "${ADDITIONAL_PORTS}" ]]; then
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] ADDITIONAL_PORTS is deprecated and might not work in future versions. Add a custom firewall script instead"
 fi
 
+if [[ -n "${LEGACY_IPTABLES}" ]]; then
+	echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] LEGACY_IPTABLES is no longer supported and is ignored. The firewall is always set up with nftables"
+fi
+
 ##########
 # WEBUI_ALLOWED_NETWORKS
 

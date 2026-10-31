@@ -23,6 +23,8 @@ nfnetlink          nft_compat,nf_tables
 
 Because they depend on the others, it should be enough to check for `nft_ct` and `nft_chain_nat`.
 
+The firewall is set up with nftables only. Hosts whose kernel lacks `nf_tables` are not supported; the former `LEGACY_IPTABLES` iptables fallback has been removed.
+
 ### Typical errors:
 
 `Error: Could not process rule: No such file or directory` [(Issue)](https://github.com/Trigus42/alpine-qbittorrentvpn/issues/66)  

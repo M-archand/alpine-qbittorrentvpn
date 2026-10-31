@@ -1,270 +1,270 @@
 #!/bin/bash
 
+set -euo pipefail
+
 # shellcheck disable=SC1091
 source /scripts/helper/functions.sh
 ##########
 # Skip - Only needed if VPN is enabled
 
-if [[ $VPN_ENABLED == "no" ]]; then
+if [[ "${VPN_ENABLED:-}" == "no" ]]; then
     exit 0
 fi
 
 ##########
-# nft rules
+# Error handling
+# Any failing command below stops the container instead of leaving a half-configured network behind
 
-# Mark outgoing packets belonging to a WebUI connection (for routing and firewall)
-if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-	nft "add table inet qbt-mark"
-	nft "add chain inet qbt-mark prerouting { type filter hook prerouting priority -150 ; }"
-	nft "add chain inet qbt-mark output { type route hook output priority -150 ; }"
-	nft "add rule inet qbt-mark prerouting tcp dport 8080 ct state new ct mark set 9090 counter comment \"Track new WebUI connections\""
-	nft "add rule inet qbt-mark prerouting tcp dport 8080 meta mark set 8080 counter packets 0 bytes 0 comment \"Mark packets to pass rp_filter reverse path route lookup\""
-	nft "add rule inet qbt-mark output ct mark 9090 meta mark set 8080 counter comment \"Add mark to outgoing packets belonging to a WebUI connection\""
-else
-	iptables -t mangle -N QBT-MARK-PREROUTING
-	iptables -t mangle -N QBT-MARK-OUTPUT
-	iptables -t mangle -A PREROUTING -j QBT-MARK-PREROUTING
-	iptables -t mangle -A OUTPUT -j QBT-MARK-OUTPUT
-	iptables -t mangle -A QBT-MARK-PREROUTING -p tcp --dport 8080 -m conntrack --ctstate NEW -j CONNMARK --set-mark 9090 -m comment --comment "Track new WebUI connections"
-	iptables -t mangle -A QBT-MARK-PREROUTING -p tcp --dport 8080 -j MARK --set-mark 8080 -m comment --comment "Mark packets to pass rp_filter reverse path route lookup"
-	iptables -t mangle -A QBT-MARK-OUTPUT -m connmark --mark 9090 -j MARK --set-mark 8080 -m comment --comment "Add mark to outgoing packets belonging to a WebUI connection"
+# Log an error and stop the container. errexit is switched off first so stop_container always runs to completion
+fail() {
+	set +e
+	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] $1"
+	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Network setup failed, stopping the container to prevent leaks"
+	stop_container
+}
 
-	ip6tables -t mangle -N QBT-MARK-PREROUTING
-	ip6tables -t mangle -N QBT-MARK-OUTPUT
-	ip6tables -t mangle -A PREROUTING -j QBT-MARK-PREROUTING
-	ip6tables -t mangle -A OUTPUT -j QBT-MARK-OUTPUT
-	ip6tables -t mangle -A QBT-MARK-PREROUTING -p tcp --dport 8080 -m conntrack --ctstate NEW -j CONNMARK --set-mark 9090 -m comment --comment "Track new WebUI connections"
-	ip6tables -t mangle -A QBT-MARK-PREROUTING -p tcp --dport 8080 -j MARK --set-mark 8080 -m comment --comment "Mark packets to pass rp_filter reverse path route lookup"
-	ip6tables -t mangle -A QBT-MARK-OUTPUT -m connmark --mark 9090 -j MARK --set-mark 8080 -m comment --comment "Add mark to outgoing packets belonging to a WebUI connection"
+on_error() {
+	fail "network.sh failed at line $1 (exit code $?): $2"
+}
+trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
+
+##########
+# Constants
+
+webui_port=8080
+webui_fwmark=8080
+webui_ctmark=9090
+ruleset_file="/run/qbt-firewall.nft"
+
+##########
+# Validate the values that end up in firewall rules
+
+if [[ ! "${VPN_PROTOCOL:-}" =~ ^(tcp|udp)$ ]]; then
+	fail "VPN_PROTOCOL must be 'tcp' or 'udp', got '${VPN_PROTOCOL:-}'"
 fi
 
+is_port() {
+	[[ "$1" =~ ^[0-9]{1,5}$ ]] && (( "$1" >= 1 && "$1" <= 65535 ))
+}
+
+if ! is_port "${VPN_PORT:-}"; then
+	fail "VPN_PORT must be a port number, got '${VPN_PORT:-}'"
+fi
+
+if [[ -z "${VPN_DEVICE_TYPE:-}" || -z "${DOCKER_INTERFACE:-}" ]]; then
+	fail "VPN_DEVICE_TYPE ('${VPN_DEVICE_TYPE:-}') and DOCKER_INTERFACE ('${DOCKER_INTERFACE:-}') must be set"
+fi
+
+##########
 # Route WebUI traffic over "$DEFAULT_IPV4_GATEWAY"
+
 mkdir -p /etc/iproute2/
-echo "8080 webui" >> /etc/iproute2/rt_tables
-if [ -n "$DEFAULT_IPV4_GATEWAY" ]; then
+echo "${webui_fwmark} webui" >> /etc/iproute2/rt_tables
+if [[ -n "${DEFAULT_IPV4_GATEWAY:-}" ]]; then
 	# Default
-	ip rule add fwmark 8080 table webui 
-	ip route add default via "$DEFAULT_IPV4_GATEWAY" table webui
+	ip rule add fwmark "${webui_fwmark}" table webui
+	ip route add default via "${DEFAULT_IPV4_GATEWAY}" table webui
 	# Look for local networks first
-	ip rule add fwmark 8080 table main suppress_prefixlength 1
+	ip rule add fwmark "${webui_fwmark}" table main suppress_prefixlength 1
 fi
-if [ -n "$DEFAULT_IPV6_GATEWAY" ]; then
+if [[ -n "${DEFAULT_IPV6_GATEWAY:-}" ]]; then
 	# Default
-	ip -6 rule add fwmark 8080 table webui 
-	ip -6 route add default via "$DEFAULT_IPV6_GATEWAY" table webui
+	ip -6 rule add fwmark "${webui_fwmark}" table webui
+	ip -6 route add default via "${DEFAULT_IPV6_GATEWAY}" table webui
 	# Look for local networks first
-	ip -6 rule add fwmark 8080 table main suppress_prefixlength 1
+	ip -6 rule add fwmark "${webui_fwmark}" table main suppress_prefixlength 1
 fi
 
-if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-	# Add firewall table
-	nft add table inet qbt-firewall
-
-	# Create the sets for storing the IPv4 and IPv6 addresses
-	nft "add set inet qbt-firewall vpn_ipv4 { type ipv4_addr ; }"
-	nft "add set inet qbt-firewall vpn_ipv6 { type ipv6_addr ; }"
-else
-	# Create IP sets for IPv4 and IPv6 addresses
-	ipset create vpn_ipv4 hash:ip family inet
-	ipset create vpn_ipv6 hash:ip family inet6
-fi
-
-## VPN_REMOTE IP
+##########
+# VPN_REMOTE IP
 
 VPN_REMOTE_IPv4_ADDRESSES=()
 VPN_REMOTE_IPv6_ADDRESSES=()
+VPN_REMOTE_IP=""
 
 # VPN_REMOTE is already an IPv4 address
-if (ipcalc -c -4 "$VPN_REMOTE" > /dev/null 2>&1); then
-	VPN_REMOTE_IPv4_ADDRESSES+=("$VPN_REMOTE")
+if (ipcalc -c -4 "${VPN_REMOTE:-}" > /dev/null 2>&1); then
+	VPN_REMOTE_IPv4_ADDRESSES+=("${VPN_REMOTE}")
 # VPN_REMOTE is already an IPv6 address
-elif (ipcalc -c -6 "$VPN_REMOTE" > /dev/null 2>&1); then
-	VPN_REMOTE_IPv6_ADDRESSES+=("$VPN_REMOTE")
+elif (ipcalc -c -6 "${VPN_REMOTE:-}" > /dev/null 2>&1); then
+	VPN_REMOTE_IPv6_ADDRESSES+=("${VPN_REMOTE}")
 # VPN_REMOTE is a hostname
 else
-	if [[ "${VPN_TYPE}" == "openvpn" ]]; then
+	if [[ "${VPN_TYPE:-}" == "openvpn" ]]; then
 		while ! VPN_REMOTE_IP=$(grep -o -m 1 -P 'Peer Connection Initiated with [^\d]+\K(\d+(\.\d+){3})(?=:\d+)' < /var/log/openvpn.log); do sleep 0.1; done
 	else
-		VPN_REMOTE_IP="$(wg show | grep -o -m 1 -P '((?<=endpoint:\s\[)[0-9a-f:]+(?=\]:\d+$))|((?<=endpoint:\s)[0-9.]+(?=:\d+$))')"
+		VPN_REMOTE_IP="$(wg show | grep -o -m 1 -P '((?<=endpoint:\s\[)[0-9a-f:]+(?=\]:\d+$))|((?<=endpoint:\s)[0-9.]+(?=:\d+$))' || true)"
 	fi
 
-	if (ipcalc -c -4 "$VPN_REMOTE_IP" > /dev/null 2>&1); then
-		VPN_REMOTE_IPv4_ADDRESSES+=("$VPN_REMOTE_IP")
-	elif (ipcalc -c -6 "$VPN_REMOTE_IP" > /dev/null 2>&1); then
-		VPN_REMOTE_IPv6_ADDRESSES+=("$VPN_REMOTE_IP")
+	if (ipcalc -c -4 "${VPN_REMOTE_IP}" > /dev/null 2>&1); then
+		VPN_REMOTE_IPv4_ADDRESSES+=("${VPN_REMOTE_IP}")
+	elif (ipcalc -c -6 "${VPN_REMOTE_IP}" > /dev/null 2>&1); then
+		VPN_REMOTE_IPv6_ADDRESSES+=("${VPN_REMOTE_IP}")
 	else
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] neither $VPN_REMOTE (VPN_REMOTE) nor \"$VPN_REMOTE_IP\" (obtained from the VPN client) is a valid IP"
-		stop_container
+		fail "neither ${VPN_REMOTE:-} (VPN_REMOTE) nor \"${VPN_REMOTE_IP}\" (obtained from the VPN client) is a valid IP"
 	fi
 fi
 
-if [[ "$DEBUG" == "yes" ]]; then
-	# shellcheck disable=SC2154
+if [[ "${DEBUG:-}" == "yes" ]]; then
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] VPN_REMOTE_IPv4_ADDRESSES defined as (${VPN_REMOTE_IPv4_ADDRESSES[*]})"
-	# shellcheck disable=SC2154
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] VPN_REMOTE_IPv6_ADDRESSES defined as (${VPN_REMOTE_IPv6_ADDRESSES[*]})"
 fi
 
-# Fill the sets with the VPN server addresses
-if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-	for address in "${VPN_REMOTE_IPv4_ADDRESSES[@]}"; do
-		nft "add element inet qbt-firewall vpn_ipv4 { $address }"
-	done
-	for address in "${VPN_REMOTE_IPv6_ADDRESSES[@]}"; do
-		nft "add element inet qbt-firewall vpn_ipv6 { $address }"
-	done
-else
-	for address in "${VPN_REMOTE_IPv4_ADDRESSES[@]}"; do
-		ipset add vpn_ipv4 "$address"
-	done
-	for address in "${VPN_REMOTE_IPv6_ADDRESSES[@]}"; do
-		ipset add vpn_ipv6 "$address"
-	done
-fi
+##########
+# Optional rules (collected first, emitted into the ruleset below)
 
-# Input
-if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-	nft "add chain inet qbt-firewall input { type filter hook input priority 0 ; policy drop ; }"
-	
-	nft "add rule inet qbt-firewall input iifname $VPN_DEVICE_TYPE accept comment \"Accept input from VPN tunnel\""
-	nft "add rule inet qbt-firewall input $VPN_PROTOCOL sport $VPN_PORT ip saddr @vpn_ipv4 accept comment \"Accept input from VPN server \(IPv4\)\""
-	nft "add rule inet qbt-firewall input $VPN_PROTOCOL sport $VPN_PORT ip6 saddr @vpn_ipv6 accept comment \"Accept input from VPN server \(IPv6\)\""
-	nft "add rule inet qbt-firewall input iifname lo accept comment \"Accept input from internal loopback\""
-	nft "add rule inet qbt-firewall input icmpv6 type {nd-neighbor-solicit,nd-neighbor-advert,nd-router-solicit,nd-router-advert} accept comment \"Basic ICMPv6 NDP\""
-	nft "add rule inet qbt-firewall input icmpv6 type {destination-unreachable, packet-too-big, time-exceeded} accept comment \"Basic ICMPv6 errors (optional)\""
-	nft "add rule inet qbt-firewall input icmp type {destination-unreachable, time-exceeded} accept comment \"Basic ICMP errors (optional)\""
-	nft "add rule inet qbt-firewall input icmp type {echo-request} accept comment \"Respond to IPv4 pings (optional)\""
-	nft "add rule inet qbt-firewall input icmpv6 type {echo-request} accept comment \"Respond to IPv6 pings (optional)\""
-else
-	iptables -P INPUT DROP
-	ip6tables -P INPUT DROP
-
-	iptables -A INPUT -i "$VPN_DEVICE_TYPE" -j ACCEPT -m comment --comment "Accept input from VPN tunnel"
-	iptables -A INPUT -p "$VPN_PROTOCOL" --sport "$VPN_PORT" -m set --match-set vpn_ipv4 src -j ACCEPT -m comment --comment "Accept input from VPN server (IPv4)"
-	ip6tables -A INPUT -p "$VPN_PROTOCOL" --sport "$VPN_PORT" -m set --match-set vpn_ipv6 src -j ACCEPT -m comment --comment "Accept input from VPN server (IPv6)"
-	iptables -A INPUT -i lo -j ACCEPT -m comment --comment "Accept input from internal loopback"
-	ip6tables -A INPUT -p icmpv6 --icmpv6-type 135 -j ACCEPT -m comment --comment "Basic ICMPv6 NDP (Neighbor Solicitation)"
-	ip6tables -A INPUT -p icmpv6 --icmpv6-type 136 -j ACCEPT -m comment --comment "Basic ICMPv6 NDP (Neighbor Advertisement)"
-	ip6tables -A INPUT -p icmpv6 --icmpv6-type 133 -j ACCEPT -m comment --comment "Basic ICMPv6 NDP (Router Solicitation)"
-	ip6tables -A INPUT -p icmpv6 --icmpv6-type 134 -j ACCEPT -m comment --comment "Basic ICMPv6 NDP (Router Advertisement)"
-	ip6tables -A INPUT -p icmpv6 --icmpv6-type 1 -j ACCEPT -m comment --comment "Basic ICMPv6 errors (Destination Unreachable)"
-	ip6tables -A INPUT -p icmpv6 --icmpv6-type 2 -j ACCEPT -m comment --comment "Basic ICMPv6 errors (Packet Too Big)"
-	ip6tables -A INPUT -p icmpv6 --icmpv6-type 3 -j ACCEPT -m comment --comment "Basic ICMPv6 errors (Time Exceeded)"
-	iptables -A INPUT -p icmp --icmp-type destination-unreachable -j ACCEPT -m comment --comment "Basic ICMP errors (optional)"
-	iptables -A INPUT -p icmp --icmp-type time-exceeded -j ACCEPT -m comment --comment "Basic ICMP errors (optional)"
-	iptables -A INPUT -p icmp --icmp-type echo-request -j ACCEPT -m comment --comment "Respond to IPv4 pings (optional)"
-	ip6tables -A INPUT -p icmpv6 --icmpv6-type 128 -j ACCEPT -m comment --comment "Respond to IPv6 pings (Echo Request)"
-fi
-
+input_rules=()
+output_rules=()
 
 # Input to WebUI
-if [ -z "$WEBUI_ALLOWED_NETWORKS" ]; then
-	if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-		nft "add rule inet qbt-firewall input tcp dport 8080 accept comment \"Accept input to the qBt WebUI\""
-	else
-		iptables -A INPUT -p tcp --dport 8080 -j ACCEPT -m comment --comment "Accept input to the qBt WebUI"
-		ip6tables -A INPUT -p tcp --dport 8080 -j ACCEPT -m comment --comment "Accept input to the qBt WebUI"
-	fi
+webui_allowed_ipv4=()
+webui_allowed_ipv6=()
+if [[ -z "${WEBUI_ALLOWED_NETWORKS:-}" ]]; then
+	input_rules+=("tcp dport ${webui_port} accept comment \"Accept input to the qBt WebUI\"")
 else
-	# Create sets for storing the allowed IPv4 and IPv6 addresses
-	if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-		nft "add set inet qbt-firewall webui_allowed_networks_ipv4 { type ipv4_addr; flags interval ; }"
-		nft "add set inet qbt-firewall webui_allowed_networks_ipv6 { type ipv6_addr; flags interval ; }"
-	else
-		ipset create webui_allowed_networks_ipv4 hash:net family inet
-		ipset create webui_allowed_networks_ipv6 hash:net family inet6
-	fi
-
 	# Split comma separated string into list from WEBUI_ALLOWED_NETWORKS env variable
-	IFS=',' read -ra allowed_networks_array <<< "$WEBUI_ALLOWED_NETWORKS"
+	IFS=',' read -ra allowed_networks_array <<< "${WEBUI_ALLOWED_NETWORKS}"
 
-	# Fill the sets with the allowed addresses
 	for address in "${allowed_networks_array[@]}"; do
-		# Remove whitepaces (for ipcalc)
-		address="$(sed -e 's/\s//g' <<< "$address")"
+		# Remove whitespaces (for ipcalc)
+		address="${address//[[:space:]]/}"
 
-		if ipcalc -c -4 "$address"; then
-			if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-				nft "add element inet qbt-firewall webui_allowed_networks_ipv4 { $address }"
-			else
-				ipset add webui_allowed_networks_ipv4 "$address"
-			fi
-		elif ipcalc -c -6 "$address"; then
-			if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-				nft "add element inet qbt-firewall webui_allowed_networks_ipv6 { $address }"
-			else
-				ipset add webui_allowed_networks_ipv6 "$address"
-			fi
+		if (ipcalc -c -4 "${address}" > /dev/null 2>&1); then
+			webui_allowed_ipv4+=("${address}")
+		elif (ipcalc -c -6 "${address}" > /dev/null 2>&1); then
+			webui_allowed_ipv6+=("${address}")
+		else
+			fail "'${address}' in WEBUI_ALLOWED_NETWORKS is not a valid IPv4/IPv6 address or network"
 		fi
 	done
 
-	# Add rules to accept incoming connections to the WebUI from the allowed networks
-	if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-		nft "add rule inet qbt-firewall input tcp dport 8080 ip saddr @webui_allowed_networks_ipv4 counter accept comment \"Accept input to the qBt WebUI \(IPv4\)\""
-		nft "add rule inet qbt-firewall input tcp dport 8080 ip6 saddr @webui_allowed_networks_ipv6 counter accept comment \"Accept input to the qBt WebUI \(IPv6\)\""
-	else
-		iptables -A INPUT -p tcp --dport 8080 -m set --match-set webui_allowed_networks_ipv4 src -j ACCEPT -m comment --comment "Accept input to the qBt WebUI (IPv4)"
-		ip6tables -A INPUT -p tcp --dport 8080 -m set --match-set webui_allowed_networks_ipv6 src -j ACCEPT -m comment --comment "Accept input to the qBt WebUI (IPv6)"
-	fi
-fi
-
-# Output
-if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-	nft "add chain inet qbt-firewall output { type filter hook postrouting priority 0 ; policy drop ; }"
-
-	nft "add rule inet qbt-firewall output oifname $VPN_DEVICE_TYPE accept comment \"Accept output to VPN tunnel\""
-	nft "add rule inet qbt-firewall output $VPN_PROTOCOL dport $VPN_PORT ip daddr @vpn_ipv4 accept comment \"Accept output to VPN server \(IPv4\)\""
-	nft "add rule inet qbt-firewall output $VPN_PROTOCOL dport $VPN_PORT ip6 daddr @vpn_ipv6 accept comment \"Accept output to VPN server \(IPv6\)\""
-	nft "add rule inet qbt-firewall output tcp sport 8080 meta mark 8080 counter accept comment \"Accept outgoing packets belonging to a WebUI connection\""
-	nft "add rule inet qbt-firewall output oifname lo accept comment \"Accept output to internal loopback\""
-	nft "add rule inet qbt-firewall output icmpv6 type {nd-neighbor-solicit,nd-neighbor-advert,nd-router-solicit,nd-router-advert} accept comment \"Basic ICMPv6 NDP\""
-	nft "add rule inet qbt-firewall output icmpv6 type {destination-unreachable, packet-too-big, time-exceeded} accept comment \"ICMPv6 errors (optional)\""
-	nft "add rule inet qbt-firewall output icmp type {destination-unreachable, time-exceeded} accept comment \"ICMP errors (optional)\""
-	nft "add rule inet qbt-firewall output icmp type {echo-reply} accept comment \"Respond to IPv4 pings (optional)\""
-	nft "add rule inet qbt-firewall output icmpv6 type {echo-reply} accept comment \"Respond to IPv6 pings (optional)\""
-
-else
-	iptables -P OUTPUT DROP
-	ip6tables -P OUTPUT DROP
-
-	iptables -A OUTPUT -o "$VPN_DEVICE_TYPE" -j ACCEPT -m comment --comment "Accept output to VPN tunnel"
-	iptables -A OUTPUT -p "$VPN_PROTOCOL" --dport "$VPN_PORT" -m set --match-set vpn_ipv4 dst -j ACCEPT -m comment --comment "Accept output to VPN server (IPv4)"
-	ip6tables -A OUTPUT -p "$VPN_PROTOCOL" --dport "$VPN_PORT" -m set --match-set vpn_ipv6 dst -j ACCEPT -m comment --comment "Accept output to VPN server (IPv6)"
-	iptables -A OUTPUT -p tcp --sport 8080 -m mark --mark 8080 -j ACCEPT -m comment --comment "Accept outgoing packets belonging to a WebUI connection"
-	iptables -A OUTPUT -o lo -j ACCEPT -m comment --comment "Accept output to internal loopback"
-	ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 135 -j ACCEPT -m comment --comment "Basic ICMPv6 NDP (Neighbor Solicitation)"
-	ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 136 -j ACCEPT -m comment --comment "Basic ICMPv6 NDP (Neighbor Advertisement)"
-	ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 133 -j ACCEPT -m comment --comment "Basic ICMPv6 NDP (Router Solicitation)"
-	ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 134 -j ACCEPT -m comment --comment "Basic ICMPv6 NDP (Router Advertisement)"
-	ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 1 -j ACCEPT -m comment --comment "ICMPv6 errors (Destination Unreachable)"
-	ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 2 -j ACCEPT -m comment --comment "ICMPv6 errors (Packet Too Big)"
-	ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 3 -j ACCEPT -m comment --comment "ICMPv6 errors (Time Exceeded)"
-	iptables -A OUTPUT -p icmp --icmp-type destination-unreachable -j ACCEPT -m comment --comment "ICMP errors (optional)"
-	iptables -A OUTPUT -p icmp --icmp-type time-exceeded -j ACCEPT -m comment --comment "ICMP errors (optional)"
-	iptables -A OUTPUT -p icmp --icmp-type echo-reply -j ACCEPT -m comment --comment "Respond to IPv4 pings (optional)"
-	ip6tables -A OUTPUT -p icmpv6 --icmpv6-type 129 -j ACCEPT -m comment --comment "Respond to IPv6 pings (Echo Reply)"
+	input_rules+=("tcp dport ${webui_port} ip saddr @webui_allowed_networks_ipv4 counter accept comment \"Accept input to the qBt WebUI (IPv4)\"")
+	input_rules+=("tcp dport ${webui_port} ip6 saddr @webui_allowed_networks_ipv6 counter accept comment \"Accept input to the qBt WebUI (IPv6)\"")
 fi
 
 # Additional port list for scripts or container linking
-if [[ -n "$ADDITIONAL_PORTS" ]]; then
-	IFS=',' read -ra additional_port_list <<< "$ADDITIONAL_PORTS"
+if [[ -n "${ADDITIONAL_PORTS:-}" ]]; then
+	IFS=',' read -ra additional_port_list <<< "${ADDITIONAL_PORTS}"
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] ADDITIONAL_PORTS is deprecated."
 
 	for additional_port_item in "${additional_port_list[@]}"; do
-		additional_port_item=$(echo "$additional_port_item" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Adding additional incomming/outgoing port $additional_port_item for $DOCKER_INTERFACE"
-		
-		if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-			nft "add rule inet qbt-firewall input tcp dport $additional_port_item accept comment \"Accept input from additional port\""
-			nft "add rule inet qbt-firewall output oifname $DOCKER_INTERFACE tcp sport $additional_port_item accept comment \"Accept output to additional port\""
-		else
-			iptables -A INPUT -p tcp --dport "$additional_port_item" -j ACCEPT -m comment --comment "Accept input from additional port"
-			iptables -A OUTPUT -o "$DOCKER_INTERFACE" -p tcp --sport "$additional_port_item" -j ACCEPT -m comment --comment "Accept output to additional port"
+		additional_port_item="$(sed -e 's~^[ \t]*~~;s~[ \t]*$~~' <<< "${additional_port_item}")"
+
+		if ! is_port "${additional_port_item}"; then
+			fail "'${additional_port_item}' in ADDITIONAL_PORTS is not a valid port number"
 		fi
+
+		echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Adding additional incoming/outgoing port ${additional_port_item} for ${DOCKER_INTERFACE}"
+		input_rules+=("tcp dport ${additional_port_item} accept comment \"Accept input from additional port\"")
+		output_rules+=("oifname \"${DOCKER_INTERFACE}\" tcp sport ${additional_port_item} accept comment \"Accept output to additional port\"")
 	done
 fi
 
-if [[ "$DEBUG" == "yes" ]]; then
+##########
+# Generate the nftables ruleset
+# The whole file is loaded in one transaction: either every rule is applied or none are
+
+# Print a named set, optionally with elements. Usage: nft_set <name> <type> <flags or ""> [element...]
+nft_set() {
+	local name="$1" type="$2" flags="$3" elements
+	shift 3
+	echo "	set ${name} {"
+	echo "		type ${type}"
+	if [[ -n "${flags}" ]]; then
+		echo "		flags ${flags}"
+	fi
+	if [[ $# -gt 0 ]]; then
+		printf -v elements '%s, ' "$@"
+		echo "		elements = { ${elements%, } }"
+	fi
+	echo "	}"
+}
+
+# Print rules, one per line, indented for a chain body
+nft_rules() {
+	local rule
+	for rule in "$@"; do
+		echo "		${rule}"
+	done
+}
+
+{
+cat <<EOF
+# Generated by /scripts/init-scripts/network.sh on $(date +'%Y-%m-%d %H:%M:%S')
+# Loaded atomically with 'nft -f ${ruleset_file}'
+
+# Mark packets belonging to a WebUI connection (for policy routing and the firewall)
+table inet qbt-mark {
+	chain prerouting {
+		type filter hook prerouting priority -150;
+		tcp dport ${webui_port} ct state new ct mark set ${webui_ctmark} counter comment "Track new WebUI connections"
+		tcp dport ${webui_port} meta mark set ${webui_fwmark} counter comment "Mark packets to pass rp_filter reverse path route lookup"
+	}
+
+	chain output {
+		type route hook output priority -150;
+		ct mark ${webui_ctmark} meta mark set ${webui_fwmark} counter comment "Add mark to outgoing packets belonging to a WebUI connection"
+	}
+}
+
+# Kill switch: only the VPN tunnel, the VPN server, loopback, the WebUI and ICMP control traffic are allowed
+table inet qbt-firewall {
+EOF
+
+nft_set vpn_ipv4 ipv4_addr "" "${VPN_REMOTE_IPv4_ADDRESSES[@]}"
+nft_set vpn_ipv6 ipv6_addr "" "${VPN_REMOTE_IPv6_ADDRESSES[@]}"
+if [[ -n "${WEBUI_ALLOWED_NETWORKS:-}" ]]; then
+	nft_set webui_allowed_networks_ipv4 ipv4_addr interval "${webui_allowed_ipv4[@]}"
+	nft_set webui_allowed_networks_ipv6 ipv6_addr interval "${webui_allowed_ipv6[@]}"
+fi
+
+cat <<EOF
+
+	chain input {
+		type filter hook input priority 0; policy drop;
+		iifname "${VPN_DEVICE_TYPE}" accept comment "Accept input from VPN tunnel"
+		${VPN_PROTOCOL} sport ${VPN_PORT} ip saddr @vpn_ipv4 accept comment "Accept input from VPN server (IPv4)"
+		${VPN_PROTOCOL} sport ${VPN_PORT} ip6 saddr @vpn_ipv6 accept comment "Accept input from VPN server (IPv6)"
+		iifname "lo" accept comment "Accept input from internal loopback"
+		icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert } accept comment "Basic ICMPv6 NDP"
+		icmpv6 type { destination-unreachable, packet-too-big, time-exceeded } accept comment "Basic ICMPv6 errors (optional)"
+		icmp type { destination-unreachable, time-exceeded } accept comment "Basic ICMP errors (optional)"
+		icmp type echo-request accept comment "Respond to IPv4 pings (optional)"
+		icmpv6 type echo-request accept comment "Respond to IPv6 pings (optional)"
+EOF
+nft_rules "${input_rules[@]}"
+cat <<EOF
+	}
+
+	chain output {
+		type filter hook postrouting priority 0; policy drop;
+		oifname "${VPN_DEVICE_TYPE}" accept comment "Accept output to VPN tunnel"
+		${VPN_PROTOCOL} dport ${VPN_PORT} ip daddr @vpn_ipv4 accept comment "Accept output to VPN server (IPv4)"
+		${VPN_PROTOCOL} dport ${VPN_PORT} ip6 daddr @vpn_ipv6 accept comment "Accept output to VPN server (IPv6)"
+		tcp sport ${webui_port} meta mark ${webui_fwmark} counter accept comment "Accept outgoing packets belonging to a WebUI connection"
+		oifname "lo" accept comment "Accept output to internal loopback"
+		icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert } accept comment "Basic ICMPv6 NDP"
+		icmpv6 type { destination-unreachable, packet-too-big, time-exceeded } accept comment "ICMPv6 errors (optional)"
+		icmp type { destination-unreachable, time-exceeded } accept comment "ICMP errors (optional)"
+		icmp type echo-reply accept comment "Respond to IPv4 pings (optional)"
+		icmpv6 type echo-reply accept comment "Respond to IPv6 pings (optional)"
+EOF
+nft_rules "${output_rules[@]}"
+cat <<EOF
+	}
+}
+EOF
+} > "${ruleset_file}"
+
+##########
+# Load the ruleset
+
+echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Loading nftables ruleset from ${ruleset_file}"
+if ! nft -f "${ruleset_file}"; then
+	fail "Failed to load the nftables ruleset, no firewall rules were applied. Check the nft errors above and that the host kernel provides nf_tables (see docs/troubleshooting/common-issues.md)"
+fi
+
+if [[ "${DEBUG:-}" == "yes" ]]; then
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] 'main' routing table defined as follows..."
 	echo "--------------------"
 	ip route show table main
@@ -275,32 +275,22 @@ if [[ "$DEBUG" == "yes" ]]; then
 	ip rule
 	echo "--------------------"
 
-	if [[ "$LEGACY_IPTABLES" != "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] nft ruleset defined as follows..."
-		echo "--------------------"
-		nft list ruleset
-		echo "--------------------"
-	else
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] iptables rules defined as follows..."
-		echo "--------------------"
-		iptables -S
-		echo "--------------------"
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] ip6tables rules defined as follows..."
-		echo "--------------------"
-		ip6tables -S
-		echo "--------------------"
-	fi
+	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] nft ruleset defined as follows..."
+	echo "--------------------"
+	nft list ruleset
+	echo "--------------------"
 
-    test_connection
+	# Diagnostics only (shared helper, not written for set -u), a failure here must not stop the container
+	( set +u; test_connection ) || true
 fi
 
 ##########
-# Save envirnonment variables
+# Save environment variables
 
 CONT_INIT_ENV="/var/run/s6/container_environment"
-mkdir -p $CONT_INIT_ENV
+mkdir -p "${CONT_INIT_ENV}"
 export_vars=("DOCKER_INTERFACE")
 
 for name in "${export_vars[@]}"; do
-	echo -n "${!name}" > "$CONT_INIT_ENV/$name"
+	echo -n "${!name}" > "${CONT_INIT_ENV}/${name}"
 done

@@ -24,8 +24,6 @@ RUN \
         dos2unix \
         grep \
         ipcalc \
-        ipset \
-        iptables \
         iputils \
         net-tools \
         nftables \
