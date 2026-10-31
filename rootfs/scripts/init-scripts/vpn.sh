@@ -174,12 +174,14 @@ if [[ "${VPN_TYPE}" == "wireguard" ]]; then
     if grep -q 'src_valid_mark=1' "$wg_quick_bin"; then
         echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] Could not strip src_valid_mark sysctl from wg-quick, WireGuard may fail in unprivileged containers"
     fi
+fi
 
-    # openresolv >= 3.17 refuses to rewrite a resolv.conf it did not create ("signature mismatch"), let it take over first
-    resolvconf -a control < /etc/resolv.conf 2>/dev/null || true
-    if ! resolvconf -u 2>/dev/null; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] openresolv could not take over /etc/resolv.conf, WireGuard DNS settings may fail to apply"
-    fi
+##########
+# DNS: let openresolv take over resolv.conf (kept as interface "control") so wg-quick/openvpn-dns.sh can rewrite it; openresolv >= 3.17 refuses files it did not create ("signature mismatch")
+
+resolvconf -a control < /etc/resolv.conf 2>/dev/null || true
+if ! resolvconf -u 2>/dev/null; then
+    echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] openresolv could not take over /etc/resolv.conf, DNS servers provided by the VPN may fail to apply"
 fi
 
 ##########
@@ -221,6 +223,11 @@ if [[ $VPN_ENABLED != "no" ]]; then
         # Use the credentials file if it exists and is not empty
         if [[ -s /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf ]]; then
             openvpn_args+=(--auth-user-pass /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf)
+        fi
+
+        # Apply the DNS servers pushed by the server, unless NAME_SERVERS (deprecated) pins resolvers explicitly
+        if [[ -z "${NAME_SERVERS//[[:space:]]/}" ]]; then
+            openvpn_args+=(--up /scripts/helper/openvpn-dns.sh --down /scripts/helper/openvpn-dns.sh)
         fi
 
         # Ignore pushed IPv6 options if IPv6 is disabled

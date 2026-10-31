@@ -92,6 +92,12 @@ YOURUSERNAME
 YOURPASSWORD
 ```
 
+## DNS
+Before the tunnel is up the container uses the DNS settings Docker gives it (`--dns` / Compose `dns:` / Kubernetes `dnsConfig`), see the [example compose files](docs/examples/compose).
+Once connected, the resolvers provided by the VPN replace them: the `DNS=` line of a WireGuard config, or the `dhcp-option DNS`/`DNS6`/`DOMAIN` options pushed by an OpenVPN server. If the VPN provides no resolvers, the Docker DNS settings stay in place.
+
+The deprecated `NAME_SERVERS` variable (comma separated IPs) still appends fixed resolvers to `/etc/resolv.conf` and makes OpenVPN ignore pushed DNS servers. It will be removed in a future release; use the Docker DNS settings instead.
+
 ## PUID/PGID
 User ID (PUID) and Group ID (PGID) can be found by issuing the following command for the user you want to run the container as:
 

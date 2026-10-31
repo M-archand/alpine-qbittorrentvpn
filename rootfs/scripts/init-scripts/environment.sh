@@ -247,26 +247,25 @@ NAME_SERVERS=$(echo "${NAME_SERVERS}" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
 export NAME_SERVERS
 
 if [[ -n "${NAME_SERVERS}" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [WARN] NAME_SERVERS is deprecated. Prefer Docker --dns / Compose dns: / Kubernetes dnsConfig. Editing /etc/resolv.conf inside the container may be unreliable in Kubernetes. Support will be removed in a future release."
+	echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] NAME_SERVERS is deprecated. Prefer Docker --dns / Compose dns: / Kubernetes dnsConfig. Editing /etc/resolv.conf inside the container may be unreliable in Kubernetes. Support will be removed in a future release."
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] NAME_SERVERS defined as '${NAME_SERVERS}'"
+
+	# Split comma separated string into list from NAME_SERVERS env variable
+	IFS=',' read -ra name_server_list <<< "${NAME_SERVERS}"
+
+	# Process name servers in the list
+	for name_server_item in "${name_server_list[@]}"; do
+		# strip whitespace from start and end of name_server_item
+		name_server_item=$(echo "${name_server_item}" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+
+		if [[ "$DEBUG" == "yes" ]]; then
+			echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Adding ${name_server_item} to resolv.conf"
+		fi
+		echo "nameserver ${name_server_item}" >> /etc/resolv.conf
+	done
 else
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] NAME_SERVERS not defined (via -e NAME_SERVERS), defaulting to CloudFlare and Google name servers"
-	export NAME_SERVERS="1.1.1.1,8.8.8.8,1.0.0.1,8.8.4.4"
+	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] NAME_SERVERS not set, using the container's DNS settings (Docker/Compose/Kubernetes DNS) and the resolvers provided by the VPN"
 fi
-
-# Split comma seperated string into list from NAME_SERVERS env variable
-IFS=',' read -ra name_server_list <<< "${NAME_SERVERS}"
-
-# Process name servers in the list
-for name_server_item in "${name_server_list[@]}"; do
-	# strip whitespace from start and end of name_server_item
-	name_server_item=$(echo "${name_server_item}" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
-
-	if [[ "$DEBUG" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Adding ${name_server_item} to resolv.conf"
-	fi
-	echo "nameserver ${name_server_item}" >> /etc/resolv.conf
-done
 
 ##########
 # Save envirnonment variables
