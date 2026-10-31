@@ -211,42 +211,34 @@ if [[ $VPN_ENABLED != "no" ]]; then
         # Allow to specify relative positions for additional files (like ca, cert, key, ...)
         pushd /config/openvpn/ > /dev/null
 
-        # Check if IPv6 is enabled
-        if [ "$(cat /sys/module/ipv6/parameters/disable)" == "0" ]; then
-            # Check if credential file exists and is not empty
-            if [[ -s /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf ]]; then
-                openvpn \
-                    --auth-user-pass /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf \
-                    --config "${VPN_CONFIG}" \
-                    --script-security 2 \
-                    --route-up /scripts/helper/resume-after-connect.sh \
-                | tee /var/log/openvpn.log &
-            else
-                openvpn \
-                    --config "${VPN_CONFIG}" \
-                    --script-security 2 \
-                    --route-up /scripts/helper/resume-after-connect.sh \
-                | tee /var/log/openvpn.log &
-            fi
-        else
-            # Check if credential file exists and is not empty
-            if [[ -s /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf ]]; then
-                openvpn \
-                    --pull-filter ignore "route-ipv6" --pull-filter ignore "ifconfig-ipv6" --pull-filter ignore "tun-ipv6" --pull-filter ignore "redirect-gateway ipv6" --pull-filter ignore "dhcp-option DNS6" \
-                    --auth-user-pass /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf \
-                    --config "${VPN_CONFIG}" \
-                    --script-security 2 \
-                    --route-up /scripts/helper/resume-after-connect.sh \
-                | tee /var/log/openvpn.log &
-            else
-                openvpn \
-                    --pull-filter ignore "route-ipv6" --pull-filter ignore "ifconfig-ipv6" --pull-filter ignore "tun-ipv6" --pull-filter ignore "redirect-gateway ipv6" --pull-filter ignore "dhcp-option DNS6" \
-                    --config "${VPN_CONFIG}" \
-                    --script-security 2 \
-                    --route-up /scripts/helper/resume-after-connect.sh \
-                | tee /var/log/openvpn.log &
-            fi
+        # Build the OpenVPN command line
+        openvpn_args=(
+            --config "${VPN_CONFIG}"
+            --script-security 2
+            --route-up /scripts/helper/resume-after-connect.sh
+        )
+
+        # Use the credentials file if it exists and is not empty
+        if [[ -s /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf ]]; then
+            openvpn_args+=(--auth-user-pass /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf)
         fi
+
+        # Ignore pushed IPv6 options if IPv6 is disabled
+        if [ "$(cat /sys/module/ipv6/parameters/disable)" != "0" ]; then
+            openvpn_args+=(
+                --pull-filter ignore "route-ipv6"
+                --pull-filter ignore "ifconfig-ipv6"
+                --pull-filter ignore "tun-ipv6"
+                --pull-filter ignore "redirect-gateway ipv6"
+                --pull-filter ignore "dhcp-option DNS6"
+            )
+        fi
+
+        if [[ "$DEBUG" == "yes" ]]; then
+            echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] OpenVPN command: openvpn ${openvpn_args[*]}"
+        fi
+
+        openvpn "${openvpn_args[@]}" | tee /var/log/openvpn.log &
 
         # Revert to previous directory
         popd > /dev/null
