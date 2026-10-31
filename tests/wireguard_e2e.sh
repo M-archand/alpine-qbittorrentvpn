@@ -78,6 +78,26 @@ if [ "$QBT_IDS" != "99:100" ] || [ "$QBT_LOG_OWNER" != "99:100" ]; then
 fi
 echo "qBittorrent runs as ${QBT_IDS}, log owned by ${QBT_LOG_OWNER}"
 
+echo "Checking that the kill switch blocks the docker interface..."
+if ! docker exec qbittorrentvpn nft list chain inet qbt-firewall output | grep -q 'policy drop;'; then
+    echo "nftables chain inet qbt-firewall output with policy drop is missing"
+    docker exec qbittorrentvpn nft list ruleset || true
+    cleanup
+    exit 1
+fi
+if docker exec qbittorrentvpn ping -w 2 -c 1 -I eth0 1.1.1.1 > /dev/null 2>&1; then
+    echo "ICMP echo to 1.1.1.1 over eth0 succeeded, the kill switch leaks"
+    cleanup
+    exit 1
+fi
+CONNECT_TIME=$(docker exec qbittorrentvpn curl --interface 'if!eth0' --connect-timeout 2 --max-time 3 -s -o /dev/null -w '%{time_connect}' http://1.1.1.1:53 || true)
+if [ "$CONNECT_TIME" != "0.000000" ]; then
+    echo "TCP connection to 1.1.1.1:53 over eth0 succeeded (time_connect=${CONNECT_TIME}), the kill switch leaks"
+    cleanup
+    exit 1
+fi
+echo "Kill switch holds: nftables policy drop present, ICMP and TCP over eth0 blocked"
+
 echo "Adding test magnet link..."
 curl -s -X POST -H "Cookie: ${COOKIE}" --data "urls=magnet:?xt=urn:btih:31337..." http://127.0.0.1:8080/api/v2/torrents/add
 

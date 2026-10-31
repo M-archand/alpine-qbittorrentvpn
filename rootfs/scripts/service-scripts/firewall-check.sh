@@ -12,9 +12,9 @@ fi
 echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Firewall (kill switch) check running every ${FIREWALL_CHECK_INTERVAL}s."
 
 while :; do
-	# Reaching the internet over the docker interface (bypassing the VPN) means
-	# the kill switch is not working.
-	if (ping -I "$DOCKER_INTERFACE" -c 1 "$HEALTH_CHECK_HOST" > /dev/null 2>&1) || (ping -I "$DOCKER_INTERFACE" -c 1 "$FIREWALL_CHECK_HOST" > /dev/null 2>&1); then
+	# The kill switch is down if its nftables rules are gone or if the internet can be
+	# reached over the docker interface (bypassing the VPN).
+	if ! firewall_rules_intact || firewall_bypassed; then
 		echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Firewall is down! Killing qBittorrent!"
 		stop_container
 	fi

@@ -44,7 +44,7 @@ WARNING: Only with the `latest` tag will you continuously receive updates.
 |`DEBUG`| Print information useful for debugging in log |`yes`|`no`|
 |`DOWNLOAD_DIR_CHOWN`| Whether or not to chown files in the `/downloads` directory to `PUID` and `PGID` |`no`|`yes`|
 |`ENABLE_SSL`| Let the container handle SSL |`yes`|`no`|
-|`FIREWALL_CHECK_HOST`| Host or IP that will be used to check if the firewall can be bypassed | `8.8.8.8` | `8.8.8.8`|
+|`FIREWALL_CHECK_HOST`| Host or IP that must stay unreachable over the docker interface (ICMP echo and TCP port 53 are probed) to prove the kill switch works | `9.9.9.9` | `8.8.8.8`|
 |`FIREWALL_CHECK_INTERVAL`| Interval in seconds between kill-switch (firewall) checks |`5`|`5`|
 |`HEALTH_CHECK_HOST`| Host or IP that will be used to check if the connection is still up |`8.8.8.8`|`1.1.1.1`|
 |`HEALTH_CHECK_INTERVAL`| Interval in seconds between connection checks |`5`|`5`|
