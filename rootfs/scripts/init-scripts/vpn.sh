@@ -168,8 +168,18 @@ fi
 # rp_filter compatibility is already checked in environment.sh
 
 if [[ "${VPN_TYPE}" == "wireguard" ]]; then
-    # shellcheck disable=SC2016
-    sed -i -E 's/\[\[ \$proto == -4 ]] && cmd sysctl -q net.ipv4.conf.all.src_valid_mark=1//gm' "$(command -v wg-quick-custom)"
+    # Strip wg-quick's src_valid_mark sysctl (fails in unprivileged containers), match the command, not the full line
+    wg_quick_bin="$(command -v wg-quick-custom)"
+    sed -i -E '/cmd sysctl -q net\.ipv4\.conf\.all\.src_valid_mark=1/d' "$wg_quick_bin"
+    if grep -q 'src_valid_mark=1' "$wg_quick_bin"; then
+        echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] Could not strip src_valid_mark sysctl from wg-quick, WireGuard may fail in unprivileged containers"
+    fi
+
+    # openresolv >= 3.17 refuses to rewrite a resolv.conf it did not create ("signature mismatch"), let it take over first
+    resolvconf -a control < /etc/resolv.conf 2>/dev/null || true
+    if ! resolvconf -u 2>/dev/null; then
+        echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] openresolv could not take over /etc/resolv.conf, WireGuard DNS settings may fail to apply"
+    fi
 fi
 
 ##########
