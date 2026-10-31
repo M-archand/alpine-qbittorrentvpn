@@ -55,6 +55,17 @@ if [ -z "$COOKIE" ]; then
     exit 1
 fi
 
+echo "Checking that qBittorrent is bound to the VPN interface..."
+BOUND_IFACE=$(curl -s -H "Cookie: ${COOKIE}" http://127.0.0.1:8080/api/v2/app/preferences | grep -o '"current_network_interface":"[^"]*"' | cut -d'"' -f4)
+if [ "$BOUND_IFACE" != "wg0" ] || ! docker exec qbittorrentvpn grep -Fxq 'Session\Interface=wg0' /config/qBittorrent/config/qBittorrent.conf; then
+    echo "qBittorrent is not bound to wg0 (API reports '${BOUND_IFACE}')"
+    docker exec qbittorrentvpn grep -n 'Interface' /config/qBittorrent/config/qBittorrent.conf || true
+    docker logs qbittorrentvpn
+    cleanup
+    exit 1
+fi
+echo "qBittorrent is bound to interface: $BOUND_IFACE"
+
 echo "Adding test magnet link..."
 curl -s -X POST -H "Cookie: ${COOKIE}" --data "urls=magnet:?xt=urn:btih:31337..." http://127.0.0.1:8080/api/v2/torrents/add
 

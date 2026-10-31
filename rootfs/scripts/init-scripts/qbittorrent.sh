@@ -28,6 +28,45 @@ fi
 
 qbt_config_path="/config/qBittorrent/config/qBittorrent.conf"
 
+# Set key=value in [section] of qBittorrent.conf (replace or add, create section if missing) and verify by read-back
+qbt_set_setting() {
+	local section="$1" name="$2" value="$3" updated
+	updated="$(QBT_SECTION="$section" QBT_NAME="$name" QBT_VALUE="$value" awk '
+		BEGIN {
+			header = "[" ENVIRON["QBT_SECTION"] "]"
+			prefix = ENVIRON["QBT_NAME"] "="
+			line = prefix ENVIRON["QBT_VALUE"]
+			in_section = 0
+			done = 0
+		}
+		/^\[/ {
+			# Leaving the target section without having seen the key: add it here
+			if (in_section && !done) { print line; done = 1 }
+			in_section = ($0 == header)
+			print
+			next
+		}
+		in_section && index($0, prefix) == 1 {
+			# Replace the first occurrence, drop duplicates
+			if (!done) { print line; done = 1 }
+			next
+		}
+		{ print }
+		END {
+			if (!done) {
+				if (!in_section) { print ""; print header }
+				print line
+			}
+		}
+	' "$qbt_config_path")"
+	printf '%s\n' "$updated" > "$qbt_config_path"
+
+	if ! grep -Fxq "${name}=${value}" "$qbt_config_path"; then
+		echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Failed to set ${name}=${value} in ${qbt_config_path}"
+		stop_container
+	fi
+}
+
 # Check if qBittorrent.conf exists, if not, copy the template over
 if [ ! -e $qbt_config_path ]; then
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] qBittorrent.conf is missing, this is normal for the first launch! Copying template."
@@ -88,7 +127,7 @@ if [[ -n "${WEBUI_PASSWORD}" ]] && ! grep -Exq 'WebUI\\Password_PBKDF2=.+' "$qbt
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Setting WebUI password to WEBUI_PASSWORD"
 	salt="$(dd if=/dev/urandom bs=16 count=1 status=none | base64)"
 	key="$(/scripts/helper/dwk "$WEBUI_PASSWORD" "$salt" | head -2 | tail -1)"
-	sed -i "/\[Preferences\]/a WebUI\\\Password_PBKDF2=\"@ByteArray($salt:$key)\"" "$qbt_config_path"
+	qbt_set_setting Preferences 'WebUI\Password_PBKDF2' "\"@ByteArray($salt:$key)\""
 elif ! grep -Exq 'WebUI\\Password_PBKDF2=.+' "$qbt_config_path"; then
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] WebUI password not set. To access the WebUI set a password or get a temporary password from the qBittorrent logs."
 fi
@@ -98,16 +137,8 @@ if [[ ${VPN_ENABLED,,} != 'no' ]]; then
 	if [[ "$DEBUG" == "yes" ]]; then
 		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Setting qBt bind interface to \"${VPN_DEVICE_TYPE}\""
 	fi
-	if ! grep -Exq 'Session\\Interface=.*' "$qbt_config_path"; then
-		sed -i "/\[BitTorrent\]/a Session\\Interface=${VPN_DEVICE_TYPE}" "$qbt_config_path"
-	else
-		sed -i -E "s/^Session\\Interface=.*\$/Session\\Interface=${VPN_DEVICE_TYPE}/gm" "$qbt_config_path"
-	fi
-	if ! grep -Exq 'Session\\InterfaceName=.*' "$qbt_config_path"; then
-		sed -i "/\[BitTorrent\]/a Session\\InterfaceName=${VPN_DEVICE_TYPE}" "$qbt_config_path"
-	else
-		sed -i -E "s/^Session\\InterfaceName=.*\$/Session\\InterfaceName=${VPN_DEVICE_TYPE}/gm" "$qbt_config_path"
-	fi
+	qbt_set_setting BitTorrent 'Session\Interface' "${VPN_DEVICE_TYPE}"
+	qbt_set_setting BitTorrent 'Session\InterfaceName' "${VPN_DEVICE_TYPE}"
 fi
 
 ##########
