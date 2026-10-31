@@ -1,0 +1,55 @@
+#!/bin/sh
+# Download a GitHub release asset and verify it against the SHA-256 checksum published upstream.
+set -eu
+
+repo="$1"
+tag="$2"
+asset="$3"
+dest="$4"
+
+server_url="${GITHUB_SERVER_URL:-https://github.com}"
+api_url="${GITHUB_API_URL:-https://api.github.com}"
+
+if [ "$tag" = "latest" ]; then
+    download_base="$server_url/$repo/releases/latest/download"
+    release_api="$api_url/repos/$repo/releases/latest"
+else
+    download_base="$server_url/$repo/releases/download/$tag"
+    release_api="$api_url/repos/$repo/releases/tags/$tag"
+fi
+
+echo "Downloading $asset from $repo ($tag)"
+if ! wget -q -O "$dest" "$download_base/$asset"; then
+    echo "ERROR: failed to download $download_base/$asset" >&2
+    rm -f "$dest"
+    exit 1
+fi
+
+expected=""
+source=""
+
+# 1. Sidecar file: "<hash>  <file name>" as written by sha256sum, or a bare hash
+sidecar="$(mktemp)"
+if wget -q -O "$sidecar" "$download_base/$asset.sha256" 2>/dev/null; then
+    expected="$(head -n 1 "$sidecar" | cut -d' ' -f1)"
+    source="$asset.sha256"
+fi
+rm -f "$sidecar"
+
+# 2. Release API: the asset's "digest": "sha256:<hash>" follows its "name" in the JSON
+if [ -z "$expected" ]; then
+    expected="$(wget -q -O - "$release_api" | tr -d '\n' | grep -o "\"name\": *\"$asset\".*" | grep -o '"digest": *"sha256:[0-9a-f]\{64\}"' | head -n 1 | grep -o '[0-9a-f]\{64\}')" || true
+    source="release API digest"
+fi
+
+if ! echo "$expected" | grep -Eq '^[0-9a-f]{64}$'; then
+    echo "ERROR: no SHA-256 checksum available for $asset (neither $asset.sha256 nor a release API digest)" >&2
+    exit 1
+fi
+
+if ! echo "$expected  $dest" | sha256sum -c - > /dev/null 2>&1; then
+    echo "ERROR: SHA-256 mismatch for $asset (expected $expected from $source, got $(sha256sum "$dest" | cut -d' ' -f1))" >&2
+    rm -f "$dest"
+    exit 1
+fi
+echo "Verified $asset against $source"
