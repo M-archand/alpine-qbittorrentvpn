@@ -66,6 +66,18 @@ if [ "$BOUND_IFACE" != "wg0" ] || ! docker exec qbittorrentvpn grep -Fxq 'Sessio
 fi
 echo "qBittorrent is bound to interface: $BOUND_IFACE"
 
+echo "Checking that qBittorrent runs as PUID:PGID..."
+
+QBT_IDS=$(docker exec qbittorrentvpn sh -c 'awk "/^Uid:/{u=\$2} /^Gid:/{g=\$2} END{print u\":\"g}" /proc/$(pidof qbittorrent-nox)/status')
+QBT_LOG_OWNER=$(docker exec qbittorrentvpn stat -c '%u:%g' /config/qBittorrent/data/logs/qbittorrent.log)
+if [ "$QBT_IDS" != "99:100" ] || [ "$QBT_LOG_OWNER" != "99:100" ]; then
+    echo "qBittorrent runs as '${QBT_IDS}' and its log is owned by '${QBT_LOG_OWNER}', expected 99:100"
+    docker logs qbittorrentvpn
+    cleanup
+    exit 1
+fi
+echo "qBittorrent runs as ${QBT_IDS}, log owned by ${QBT_LOG_OWNER}"
+
 echo "Adding test magnet link..."
 curl -s -X POST -H "Cookie: ${COOKIE}" --data "urls=magnet:?xt=urn:btih:31337..." http://127.0.0.1:8080/api/v2/torrents/add
 

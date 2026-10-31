@@ -30,6 +30,8 @@ services:
     environment:
       - VPN_ENABLED=yes
       - VPN_TYPE=wireguard
+      - PUID=99
+      - PGID=100
       - LAN_NETWORK=10.13.13.0/24
       - WEBUI_PORT=8080
       - WEBUI_PASSWORD=adminadmin

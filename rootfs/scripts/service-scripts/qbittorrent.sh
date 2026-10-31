@@ -37,4 +37,5 @@ fi
 
 # Exec directly (no wrapping shell) so qbittorrent-nox is the process s6
 # supervises and receives SIGTERM on shutdown, exiting cleanly.
-exec s6-setuidgid "$(getent passwd "$PUID" | cut -d: -f1)" "$DAEMON" --profile=/config
+# Numeric uid:gid so PGID applies regardless of the account's primary group.
+exec s6-setuidgid "${PUID}:${PGID}" "$DAEMON" --profile=/config

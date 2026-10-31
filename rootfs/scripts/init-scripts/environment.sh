@@ -169,21 +169,40 @@ else
 	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] PGID defined as $PGID"
 fi
 
-# Check if the PUID exists, if not create the user with the name 'qbittorrent'
-if [[ "$(getent passwd "$PUID" | cut -d: -f1)" ]] && [[ "$DEBUG" == "yes" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] A user with PUID $PUID already exists in /etc/passwd, nothing to do."
+if [[ ! "${PUID}" =~ ^[0-9]+$ ]] || [[ ! "${PGID}" =~ ^[0-9]+$ ]]; then
+	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] PUID and PGID must be numeric IDs, got PUID='${PUID}' PGID='${PGID}'"
+	stop_container
+fi
+
+# qBittorrent runs as the numeric PUID:PGID (see service-scripts/qbittorrent.sh). The 'qbittorrent' account only gives
+# those IDs a name (ls, ps). An existing account with UID PUID is reused, otherwise 'qbittorrent' is (re)created.
+qbt_user="$(getent passwd "${PUID}" | cut -d: -f1)"
+if [[ -n "${qbt_user}" ]] && [[ "$(id -g "${qbt_user}")" == "${PGID}" ]]; then
+	if [[ "$DEBUG" == "yes" ]]; then
+		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] User '${qbt_user}' with UID ${PUID} and GID ${PGID} already exists, nothing to do."
+	fi
+elif [[ -n "${qbt_user}" ]] && [[ "${qbt_user}" != "qbittorrent" ]]; then
+	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] UID ${PUID} belongs to the existing account '${qbt_user}' (primary GID $(id -g "${qbt_user}")). qBittorrent still runs as ${PUID}:${PGID}"
 else
-	if [[ "$(getent passwd "qbittorrent" | cut -d: -f3)" ]]; then
-		if [[ "$DEBUG" == "yes" ]]; then
-			echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] A user with PUID $PUID does not exist, changing PUID of user 'qbittorrent' to $PUID"
+	if [[ "$DEBUG" == "yes" ]]; then
+		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Creating user 'qbittorrent' with UID ${PUID} and GID ${PGID}"
+	fi
+	# Drop a stale 'qbittorrent' account (other UID/GID from a previous boot); BusyBox deluser also removes its same-named group
+	if getent passwd qbittorrent > /dev/null; then
+		deluser qbittorrent > /dev/null 2>&1
+	fi
+	# Reuse the group that owns GID PGID (e.g. 'users' for 100), otherwise create 'qbittorrent' with that GID
+	qbt_group="$(getent group "${PGID}" | cut -d: -f1)"
+	if [[ -z "${qbt_group}" ]]; then
+		if getent group qbittorrent > /dev/null; then
+			delgroup qbittorrent > /dev/null 2>&1
 		fi
-		deluser qbittorrent
-		adduser -D -g qbittorrent -u "$PUID" qbittorrent
-	else
-		if [[ "$DEBUG" == "yes" ]]; then
-			echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] A user with PUID $PUID does not exist, adding an user called 'qbittorrent' with PUID $PUID"
+		if addgroup -g "${PGID}" qbittorrent; then
+			qbt_group="qbittorrent"
 		fi
-		adduser -D -u "$PUID" qbittorrent
+	fi
+	if [[ -z "${qbt_group}" ]] || ! adduser -D -u "${PUID}" -G "${qbt_group}" qbittorrent; then
+		echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] Could not create user 'qbittorrent' with UID ${PUID} and GID ${PGID}. qBittorrent still runs as ${PUID}:${PGID}, but files will show numeric owners"
 	fi
 fi
 
