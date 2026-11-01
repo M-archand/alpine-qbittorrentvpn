@@ -3,6 +3,7 @@
 The folders in this directory are examples of complete native `s6-rc` service definitions. They offer complete control compared to simply dropping a flat bash script somewhere.
 
 If you mount custom native folders correctly, a container hook will merge them directly into the s6 supervision tree just before boot.
+The folders are read on every start, so edits take effect after a restart. A component that cannot be merged (no `type` file, a `longrun` without `run`, a failed copy) parks the container: it stays up but reports `unhealthy`, and `docker inspect` names the component at fault.
 
 ### `/custom-init` (Oneshot Tasks)
 Components dropped here run predictably before the rest of your core stack runs. Use them to cleanly install software or set configuration parameters exactly where you need them in the dependency chain.
