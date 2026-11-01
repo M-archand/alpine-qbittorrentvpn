@@ -120,6 +120,15 @@ firewall_bypassed() {
 }
 
 ##########
+# OpenVPN
+# The --route-up hook (resume-after-connect.sh) records the server address OpenVPN actually connected to in this file,
+# before it signals vpn.sh that the tunnel is up. network.sh builds the kill switch from it when the .ovpn names the
+# server by hostname (IPv4 or IPv6, whatever the resolver and OpenVPN picked).
+
+# shellcheck disable=SC2034  # used by the scripts that source this file
+OPENVPN_REMOTE_IP_FILE="/run/openvpn/remote-ip"
+
+##########
 # Fatal errors
 # One contract for every fatal condition: the container is parked, never exited. The reason goes to STOP_MARKER,
 # qBittorrent does not run, and the container stays "running" so no restart policy loops it back into the same failure

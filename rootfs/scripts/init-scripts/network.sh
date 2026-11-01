@@ -85,10 +85,14 @@ if (ipcalc -c -4 "${VPN_REMOTE:-}" > /dev/null 2>&1); then
 # VPN_REMOTE is already an IPv6 address
 elif (ipcalc -c -6 "${VPN_REMOTE:-}" > /dev/null 2>&1); then
 	VPN_REMOTE_IPv6_ADDRESSES+=("${VPN_REMOTE}")
-# VPN_REMOTE is a hostname
+# VPN_REMOTE is a hostname: use the address the VPN client connected to (IPv4 or IPv6). The tunnel is already up when
+# this script runs (init-vpn finished), so the address is available now and nothing is polled.
 else
 	if [[ "${VPN_TYPE:-}" == "openvpn" ]]; then
-		while ! VPN_REMOTE_IP=$(grep -o -m 1 -P 'Peer Connection Initiated with [^\d]+\K(\d+(\.\d+){3})(?=:\d+)' < /var/log/openvpn.log); do sleep 0.1; done
+		# Written by the --route-up hook before init-vpn let init continue (see OPENVPN_REMOTE_IP_FILE in functions.sh)
+		if [[ -s "${OPENVPN_REMOTE_IP_FILE}" ]]; then
+			read -r VPN_REMOTE_IP < "${OPENVPN_REMOTE_IP_FILE}" || true
+		fi
 	else
 		VPN_REMOTE_IP="$(wg show | grep -o -m 1 -P '((?<=endpoint:\s\[)[0-9a-f:]+(?=\]:\d+$))|((?<=endpoint:\s)[0-9.]+(?=:\d+$))' || true)"
 	fi

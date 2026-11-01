@@ -130,22 +130,19 @@ else
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
-    VPN_PROTOCOL=$( (grep -o -m 1 -P '(?<=^proto\s)[^\r\n]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~') < "${VPN_CONFIG}")
-    if [[ -n "${VPN_PROTOCOL}" ]]; then
-        log_info "VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
-    else
-        VPN_PROTOCOL=$(echo "${vpn_remote_line}" | grep -o -m 1 -P 'udp|tcp-client|tcp$' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
-        if [[ -n "${VPN_PROTOCOL}" ]]; then
-            log_info "VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
-        else
-            log_warn "VPN_PROTOCOL not found in ${VPN_CONFIG_SOURCE}, assuming udp"
-            export VPN_PROTOCOL="udp"
-        fi
+    # 'proto <protocol>' line, else the optional third word of the remote line: remote <host> [<port> [<protocol>]]
+    VPN_PROTOCOL=$(grep -m 1 -P '^proto\s' "${VPN_CONFIG}" | awk '{ sub(/[#;].*/, ""); print $2 }')
+    if [[ -z "${VPN_PROTOCOL}" ]]; then
+        VPN_PROTOCOL=$(awk '{ sub(/[#;].*/, ""); print $3 }' <<< "${vpn_remote_line}")
     fi
-    # Required for use in firewall rules
-    if [[ "${VPN_PROTOCOL}" == "tcp-client" ]]; then
-        export VPN_PROTOCOL="tcp"
+    if [[ -z "${VPN_PROTOCOL}" ]]; then
+        log_warn "VPN_PROTOCOL not found in ${VPN_CONFIG_SOURCE}, assuming udp"
+        VPN_PROTOCOL="udp"
     fi
+    # The firewall rules need plain tcp/udp: drop OpenVPN's role and address family suffixes (tcp-client, udp6, tcp4-client, ...)
+    VPN_PROTOCOL="${VPN_PROTOCOL%-client}"
+    VPN_PROTOCOL="${VPN_PROTOCOL%[46]}"
+    log_info "VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
 else
     VPN_PROTOCOL="udp"
     log_info "VPN_PROTOCOL set as '${VPN_PROTOCOL}'"
@@ -220,8 +217,8 @@ if [[ $VPN_ENABLED != "no" ]]; then
         log_info "Starting OpenVPN..."
         echo "--------------------"
 
-        # Delete if file persisted between reboots
-        if [ -f /tmp/openvpn_startup_finished ]; then rm /tmp/openvpn_startup_finished; fi
+        # Delete the hook's files if they persisted from a previous boot (/tmp and /run survive a docker restart)
+        rm -f /tmp/openvpn_startup_finished "${OPENVPN_REMOTE_IP_FILE}"
 
         # Relative paths in the .ovpn (ca, cert, key, ...) resolve against the user's directory, not the copy's
         pushd /config/openvpn/ > /dev/null
