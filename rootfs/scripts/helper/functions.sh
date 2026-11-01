@@ -171,22 +171,3 @@ trip_kill_switch() {
 
     exit 0
 }
-
-print_exit_info () {
-    log_error "'ip addr show' output:"
-	echo "--------------------"
-	ip addr show
-	echo "--------------------"
-    log_error "'ip route show table main' output:"
-	echo "--------------------"
-	ip route show table main
-	echo "--------------------"
-	log_error "'ip rule' output:"
-	echo "--------------------"
-	ip rule
-	echo "--------------------"
-    log_error "'ss -lpn' output:"
-	echo "--------------------"
-	ss -lpn
-	echo "--------------------"
-}

@@ -1,20 +1,14 @@
 name: docker-setup
 
-description: Setup Docker environment for QEMU, Buildx, and registry logins
+description: Setup Docker environment for QEMU, Buildx, and the GitHub Container Registry login
 
 inputs:
   login_enabled:
-    description: "Enable or disable all logins"
+    description: "Enable or disable the login"
     default: true
     required: false
   github_token:
     description: "Set to enable GitHub Container Registry login"
-    required: false
-  dockerhub_username:
-    description: "Set to enable DockerHub login"
-    required: false
-  dockerhub_token:
-    description: "Set to enable DockerHub login"
     required: false
 
 runs:
@@ -33,10 +27,3 @@ runs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ inputs.github_token }}
-
-    - name: Login to Docker Hub
-      if: ${{ inputs.login_enabled && inputs.dockerhub_username && inputs.dockerhub_token }}
-      uses: docker/login-action@v4
-      with:
-        username: ${{ inputs.dockerhub_username }}
-        password: ${{ inputs.dockerhub_token }}

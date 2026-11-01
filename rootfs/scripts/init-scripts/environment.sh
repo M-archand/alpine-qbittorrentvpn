@@ -94,10 +94,6 @@ if [ -n "$docker_ipv4_cidr" ]; then
 	docker_ipv4="$(grep -o -m 1 -P '^[^\/]+' <<< "${docker_ipv4_cidr}")"
 	log_debug "Docker IPv4 address defined as ${docker_ipv4}"
 
-	# Calculate CIDR network notation
-	DOCKER_IPV4_NETWORK_CIDR=$(ipcalc "${docker_ipv4_cidr}" | grep -o -m 1 -P "(?<=Network:)\s+[^\s]+" | sed -e 's/\s//g')
-	log_debug "Docker IPv4 network defined as ${DOCKER_IPV4_NETWORK_CIDR}"
-
 	# Get default gateway
 	DEFAULT_IPV4_GATEWAY=$(ip -4 route list 0/0 | cut -d ' ' -f 3 | head -n 1)
 	log_debug "Default IPv4 gateway defined as ${DEFAULT_IPV4_GATEWAY}"
@@ -108,10 +104,6 @@ if [ -n "$docker_ipv6_ula_cidr" ]; then
 	# Get address without mask
 	docker_ipv6_ula="$(grep -o -m 1 -P '^[^\/]+' <<< "${docker_ipv6_ula_cidr}")"
 	log_debug "Docker unique-local IPv6 address defined as ${docker_ipv6_ula}"
-
-	# Calculate CIDR network notation
-	DOCKER_IPV6_ULA_NETWORK_CIDR=$(ipcalc "${docker_ipv6_ula_cidr}" | grep -o -m 1 -P "(?<=Network:)\s+[^\s]+" | sed -e 's/\s//g')
-	log_debug "Docker IPv6 network defined as ${DOCKER_IPV6_ULA_NETWORK_CIDR}"
 
 	# Get default gateway
 	DEFAULT_IPV6_GATEWAY=$(ip -6 route list ::0/0 | cut -d ' ' -f 3 | head -n 1)
@@ -226,8 +218,6 @@ fi
 
 export_contenv \
 	DOCKER_INTERFACE \
-	DOCKER_IPV4_NETWORK_CIDR \
-	DOCKER_IPV6_ULA_NETWORK_CIDR \
 	DEFAULT_IPV4_GATEWAY \
 	DEFAULT_IPV6_GATEWAY \
 	PUID \
