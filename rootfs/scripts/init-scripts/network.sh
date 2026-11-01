@@ -142,24 +142,6 @@ else
 	input_rules+=("tcp dport ${webui_port} ip6 saddr @webui_allowed_networks_ipv6 counter accept comment \"Accept input to the qBt WebUI (IPv6)\"")
 fi
 
-# Additional port list for scripts or container linking
-if [[ -n "${ADDITIONAL_PORTS:-}" ]]; then
-	IFS=',' read -ra additional_port_list <<< "${ADDITIONAL_PORTS}"
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] ADDITIONAL_PORTS is deprecated."
-
-	for additional_port_item in "${additional_port_list[@]}"; do
-		additional_port_item="$(sed -e 's~^[ \t]*~~;s~[ \t]*$~~' <<< "${additional_port_item}")"
-
-		if ! is_port "${additional_port_item}"; then
-			fail "'${additional_port_item}' in ADDITIONAL_PORTS is not a valid port number"
-		fi
-
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Adding additional incoming/outgoing port ${additional_port_item} for ${DOCKER_INTERFACE}"
-		input_rules+=("tcp dport ${additional_port_item} accept comment \"Accept input from additional port\"")
-		output_rules+=("oifname \"${DOCKER_INTERFACE}\" tcp sport ${additional_port_item} accept comment \"Accept output to additional port\"")
-	done
-fi
-
 ##########
 # Generate the nftables ruleset
 # The whole file is loaded in one transaction: either every rule is applied or none are

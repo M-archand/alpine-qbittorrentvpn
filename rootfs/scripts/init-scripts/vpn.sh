@@ -225,10 +225,8 @@ if [[ $VPN_ENABLED != "no" ]]; then
             openvpn_args+=(--auth-user-pass /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf)
         fi
 
-        # Apply the DNS servers pushed by the server, unless NAME_SERVERS (deprecated) pins resolvers explicitly
-        if [[ -z "${NAME_SERVERS//[[:space:]]/}" ]]; then
-            openvpn_args+=(--up /scripts/helper/openvpn-dns.sh --down /scripts/helper/openvpn-dns.sh)
-        fi
+        # Apply the DNS servers pushed by the server
+        openvpn_args+=(--up /scripts/helper/openvpn-dns.sh --down /scripts/helper/openvpn-dns.sh)
 
         # Ignore pushed IPv6 options if IPv6 is disabled
         if [ "$(cat /sys/module/ipv6/parameters/disable)" != "0" ]; then

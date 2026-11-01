@@ -6,7 +6,7 @@
 # If you mount the parent "my-custom-app" directory to /custom-services/my-custom-app
 # inside the container, this script will automatically be tracked and managed by s6.
 #
-# This replaces the old /custom-cont-init.d approach where apps were backgrounded
+# This replaces the removed /custom-cont-init.d approach where apps were backgrounded
 # using an & symbol. Here, the process runs directly and is monitored by s6.
 # If it crashes, s6 will automatically restart it.
 # ==========================================
