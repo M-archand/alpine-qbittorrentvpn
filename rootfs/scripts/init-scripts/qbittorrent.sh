@@ -126,7 +126,7 @@ fi
 if [[ -n "${WEBUI_PASSWORD}" ]] && ! grep -Exq 'WebUI\\Password_PBKDF2=.+' "$qbt_config_path"; then
 	log_info "Setting WebUI password to WEBUI_PASSWORD"
 	salt="$(dd if=/dev/urandom bs=16 count=1 status=none | base64)"
-	key="$(/scripts/helper/dwk "$WEBUI_PASSWORD" "$salt" | head -2 | tail -1)"
+	key="$(printf '%s' "$WEBUI_PASSWORD" | /scripts/helper/dwk "$salt" | tail -n 1)"
 	qbt_set_setting Preferences 'WebUI\Password_PBKDF2' "\"@ByteArray($salt:$key)\""
 elif ! grep -Exq 'WebUI\\Password_PBKDF2=.+' "$qbt_config_path"; then
 	log_info "WebUI password not set. To access the WebUI set a password or get a temporary password from the qBittorrent logs."
