@@ -1,11 +1,9 @@
 # Base images are pinned by digest. Dependabot (.github/dependabot.yml) proposes updates
 FROM golang:1.25-alpine@sha256:1ae0735f00daffa3aaf1363a5184c0d2dc55c78e3db4ec70241cdac97bf84b59 AS go-builder
 
-RUN apk add --no-cache go
-
 WORKDIR /app
 
-COPY build/dwk/* ./
+COPY build/dwk/go.mod build/dwk/main.go ./
 RUN \
     go mod download; \
     CGO_ENABLED=0 GOOS=linux go build -o ./dwk
@@ -26,18 +24,17 @@ RUN \
         dos2unix \
         grep \
         ipcalc \
+        iproute2 \
         iputils \
-        net-tools \
         nftables \
         openresolv \
         openssl \
         openvpn \
-        procps \
-        qt5-qtbase \
         sed \
         tzdata \
         wget \
-        wireguard-go;
+        wireguard-go \
+        wireguard-tools-wg-quick;
 
 COPY ./build/build-scripts /tmp/build-scripts
 # You can find the available release tags at https://github.com/just-containers/s6-overlay/releases
@@ -62,7 +59,7 @@ RUN \
     --mount=type=bind,from=go-builder,src=/app/,dst=/mnt/go-builder/ \
     cp /mnt/go-builder/dwk /scripts/helper/dwk
 
-RUN \ 
+RUN \
     # Set exec permissions
     chmod +x -R /scripts/ /etc/s6-overlay && \
     # Rename wg-quick to bypass AppArmor profile on Ubuntu 25.10+

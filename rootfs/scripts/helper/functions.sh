@@ -144,8 +144,8 @@ print_exit_info () {
 	echo "--------------------"
 	ip rule
 	echo "--------------------"
-    log_error "'netstat -lpn' output:"
+    log_error "'ss -lpn' output:"
 	echo "--------------------"
-	netstat -lpn
+	ss -lpn
 	echo "--------------------"
 }

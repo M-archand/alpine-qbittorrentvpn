@@ -253,7 +253,7 @@ if [[ $VPN_ENABLED != "no" ]]; then
         # Wait for startup
         while :; do
             # Process exited
-            if ! ps -p "$openvpn_pid" > /dev/null; then
+            if ! kill -0 "$openvpn_pid" 2>/dev/null; then
                 echo "--------------------"
                 log_error "Failed to start OpenVPN"
                 exit 1

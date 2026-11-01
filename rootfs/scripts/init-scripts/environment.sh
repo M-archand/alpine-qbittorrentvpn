@@ -13,7 +13,7 @@ echo "--------------------"
 # Host network mode?
 
 # Check for presence of network interface docker0
-check_network=$(ifconfig | grep docker0 || true)
+check_network=$(ip -o link show docker0 2>/dev/null || true)
 
 # If network interface docker0 is present then we are running in host mode and thus must exit
 if [[ -n "${check_network}" ]]; then
@@ -73,7 +73,8 @@ fi
 # Network environment
 
 # Identify docker bridge interface name (probably eth0)
-DOCKER_INTERFACE="$(netstat -ie | grep -vE "lo" | sed -n '1!p' | grep -o -m 1 -P '^[\w]+')"
+# First interface that is not the loopback, stripped of the veth peer suffix (eth0@if42 -> eth0)
+DOCKER_INTERFACE="$(ip -o link show | awk -F': ' '{sub(/@.*/, "", $2)} $2 != "lo" {print $2; exit}')"
 log_debug "Docker interface defined as ${DOCKER_INTERFACE}"
 
 # Identify IPv4 address of docker bridge interface
