@@ -9,13 +9,13 @@ if [[ $VPN_ENABLED == "no" ]]; then
 	sleep infinity
 fi
 
-echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Firewall (kill switch) check running every ${FIREWALL_CHECK_INTERVAL}s."
+log_info "Firewall (kill switch) check running every ${FIREWALL_CHECK_INTERVAL}s."
 
 while :; do
 	# The kill switch is down if its nftables rules are gone or if the internet can be
 	# reached over the docker interface (bypassing the VPN).
 	if ! firewall_rules_intact || firewall_bypassed; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Firewall is down! Killing qBittorrent!"
+		log_error "Firewall is down! Killing qBittorrent!"
 		stop_container
 	fi
 

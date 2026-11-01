@@ -18,8 +18,8 @@ fi
 # Log an error and stop the container. errexit is switched off first so stop_container always runs to completion
 fail() {
 	set +e
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] $1"
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Network setup failed, stopping the container to prevent leaks"
+	log_error "$1"
+	log_error "Network setup failed, stopping the container to prevent leaks"
 	stop_container
 }
 
@@ -105,10 +105,8 @@ else
 	fi
 fi
 
-if [[ "${DEBUG:-}" == "yes" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] VPN_REMOTE_IPv4_ADDRESSES defined as (${VPN_REMOTE_IPv4_ADDRESSES[*]})"
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] VPN_REMOTE_IPv6_ADDRESSES defined as (${VPN_REMOTE_IPv6_ADDRESSES[*]})"
-fi
+log_debug "VPN_REMOTE_IPv4_ADDRESSES defined as (${VPN_REMOTE_IPv4_ADDRESSES[*]})"
+log_debug "VPN_REMOTE_IPv6_ADDRESSES defined as (${VPN_REMOTE_IPv6_ADDRESSES[*]})"
 
 ##########
 # Optional rules (collected first, emitted into the ruleset below)
@@ -241,23 +239,23 @@ EOF
 ##########
 # Load the ruleset
 
-echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Loading nftables ruleset from ${ruleset_file}"
+log_info "Loading nftables ruleset from ${ruleset_file}"
 if ! nft -f "${ruleset_file}"; then
 	fail "Failed to load the nftables ruleset, no firewall rules were applied. Check the nft errors above and that the host kernel provides nf_tables (see docs/troubleshooting/common-issues.md)"
 fi
 
 if [[ "${DEBUG:-}" == "yes" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] 'main' routing table defined as follows..."
+	log_debug "'main' routing table defined as follows..."
 	echo "--------------------"
 	ip route show table main
 	echo "--------------------"
 
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] ip rules defined as follows..."
+	log_debug "ip rules defined as follows..."
 	echo "--------------------"
 	ip rule
 	echo "--------------------"
 
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] nft ruleset defined as follows..."
+	log_debug "nft ruleset defined as follows..."
 	echo "--------------------"
 	nft list ruleset
 	echo "--------------------"

@@ -17,7 +17,7 @@ check_network=$(ifconfig | grep docker0 || true)
 
 # If network interface docker0 is present then we are running in host mode and thus must exit
 if [[ -n "${check_network}" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Network type detected as 'Host', this will cause major issues, please stop the container and switch back to 'Bridge' mode"
+	log_error "Network type detected as 'Host', this will cause major issues, please stop the container and switch back to 'Bridge' mode"
 	stop_container
 fi
 
@@ -25,14 +25,14 @@ fi
 # Deprecation warnings
 
 if [[ -n "${LEGACY_IPTABLES}" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] LEGACY_IPTABLES is no longer supported and is ignored. The firewall is always set up with nftables"
+	log_warn "LEGACY_IPTABLES is no longer supported and is ignored. The firewall is always set up with nftables"
 fi
 
 ##########
 # WEBUI_ALLOWED_NETWORKS
 
 if [[ -n "${WEBUI_ALLOWED_NETWORKS}" ]]; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] WEBUI_ALLOWED_NETWORKS is defined as $WEBUI_ALLOWED_NETWORKS"
+    log_info "WEBUI_ALLOWED_NETWORKS is defined as $WEBUI_ALLOWED_NETWORKS"
 fi
 
 #########
@@ -45,27 +45,27 @@ DEFAULT_HEALTH_CHECK_INTERVAL=5
 DEFAULT_HEALTH_CHECK_TIMEOUT=15
 
 if [[ -z "${HEALTH_CHECK_HOST}" ]]; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] HEALTH_CHECK_HOST is not set. Using default host ${DEFAULT_HEALTH_CHECK_HOST}"
+    log_info "HEALTH_CHECK_HOST is not set. Using default host ${DEFAULT_HEALTH_CHECK_HOST}"
     HEALTH_CHECK_HOST=${DEFAULT_HEALTH_CHECK_HOST}
 fi
 
 if [[ -z "${HEALTH_CHECK_INTERVAL}" ]]; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] HEALTH_CHECK_INTERVAL is not set. Using default interval of ${DEFAULT_HEALTH_CHECK_INTERVAL}s"
+    log_info "HEALTH_CHECK_INTERVAL is not set. Using default interval of ${DEFAULT_HEALTH_CHECK_INTERVAL}s"
     HEALTH_CHECK_INTERVAL=${DEFAULT_HEALTH_CHECK_INTERVAL}
 fi
 
 if [[ -z "${HEALTH_CHECK_TIMEOUT}" ]]; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] HEALTH_CHECK_TIMEOUT is not set. Using default interval of ${DEFAULT_HEALTH_CHECK_TIMEOUT}s"
+    log_info "HEALTH_CHECK_TIMEOUT is not set. Using default interval of ${DEFAULT_HEALTH_CHECK_TIMEOUT}s"
     HEALTH_CHECK_TIMEOUT=${DEFAULT_HEALTH_CHECK_TIMEOUT}
 fi
 
 if [[ -z "${FIREWALL_CHECK_HOST}" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] FIREWALL_CHECK_HOST is not set. Using default host ${DEFAULT_FIREWALL_CHECK_HOST}"
+	log_info "FIREWALL_CHECK_HOST is not set. Using default host ${DEFAULT_FIREWALL_CHECK_HOST}"
 	FIREWALL_CHECK_HOST=${DEFAULT_FIREWALL_CHECK_HOST}
 fi
 
 if [[ -z "${FIREWALL_CHECK_INTERVAL}" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] FIREWALL_CHECK_INTERVAL is not set. Using default interval of ${DEFAULT_FIREWALL_CHECK_INTERVAL}s"
+	log_info "FIREWALL_CHECK_INTERVAL is not set. Using default interval of ${DEFAULT_FIREWALL_CHECK_INTERVAL}s"
 	FIREWALL_CHECK_INTERVAL=${DEFAULT_FIREWALL_CHECK_INTERVAL}
 fi
 
@@ -74,9 +74,7 @@ fi
 
 # Identify docker bridge interface name (probably eth0)
 DOCKER_INTERFACE="$(netstat -ie | grep -vE "lo" | sed -n '1!p' | grep -o -m 1 -P '^[\w]+')"
-if [[ "${DEBUG}" == "yes" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Docker interface defined as ${DOCKER_INTERFACE}"
-fi
+log_debug "Docker interface defined as ${DOCKER_INTERFACE}"
 
 # Identify IPv4 address of docker bridge interface
 docker_ipv4_cidr="$(ip -4 addr show dev "${DOCKER_INTERFACE}" | grep -o -m 1 -P '(?<=inet\s)\d+(\.\d+){3}\/\d+')"
@@ -89,42 +87,30 @@ docker_ipv6_ula_cidr="$(ip -6 addr show dev "${DOCKER_INTERFACE}" | grep -o -m 1
 if [ -n "$docker_ipv4_cidr" ]; then
 	# Get address without mask
 	docker_ipv4="$(grep -o -m 1 -P '^[^\/]+' <<< "${docker_ipv4_cidr}")"
-	if [[ "${DEBUG}" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Docker IPv4 address defined as ${docker_ipv4}"
-	fi
+	log_debug "Docker IPv4 address defined as ${docker_ipv4}"
 
 	# Calculate CIDR network notation
 	DOCKER_IPV4_NETWORK_CIDR=$(ipcalc "${docker_ipv4_cidr}" | grep -o -m 1 -P "(?<=Network:)\s+[^\s]+" | sed -e 's/\s//g')
-	if [[ "${DEBUG}" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Docker IPv4 network defined as ${DOCKER_IPV4_NETWORK_CIDR}"
-	fi
+	log_debug "Docker IPv4 network defined as ${DOCKER_IPV4_NETWORK_CIDR}"
 
 	# Get default gateway
 	DEFAULT_IPV4_GATEWAY=$(ip -4 route list 0/0 | cut -d ' ' -f 3 | head -n 1)
-	if [[ "${DEBUG}" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Default IPv4 gateway defined as ${DEFAULT_IPV4_GATEWAY}"
-	fi
+	log_debug "Default IPv4 gateway defined as ${DEFAULT_IPV4_GATEWAY}"
 fi
 
 # IPv6
 if [ -n "$docker_ipv6_ula_cidr" ]; then
 	# Get address without mask
 	docker_ipv6_ula="$(grep -o -m 1 -P '^[^\/]+' <<< "${docker_ipv6_ula_cidr}")"
-	if [[ "${DEBUG}" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Docker unique-local IPv6 address defined as ${docker_ipv6_ula}"
-	fi
+	log_debug "Docker unique-local IPv6 address defined as ${docker_ipv6_ula}"
 
 	# Calculate CIDR network notation
 	DOCKER_IPV6_ULA_NETWORK_CIDR=$(ipcalc "${docker_ipv6_ula_cidr}" | grep -o -m 1 -P "(?<=Network:)\s+[^\s]+" | sed -e 's/\s//g')
-	if [[ "${DEBUG}" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Docker IPv6 network defined as ${DOCKER_IPV6_ULA_NETWORK_CIDR}"
-	fi
+	log_debug "Docker IPv6 network defined as ${DOCKER_IPV6_ULA_NETWORK_CIDR}"
 
 	# Get default gateway
 	DEFAULT_IPV6_GATEWAY=$(ip -6 route list ::0/0 | cut -d ' ' -f 3 | head -n 1)
-	if [[ "${DEBUG}" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Default IPv6 gateway defined as ${DEFAULT_IPV6_GATEWAY}"
-	fi
+	log_debug "Default IPv6 gateway defined as ${DEFAULT_IPV6_GATEWAY}"
 fi
 
 ##########
@@ -145,7 +131,7 @@ if \
 	# Try to enable src_valid_mark
 	! (sysctl -q net.ipv4.conf.$DOCKER_INTERFACE.src_valid_mark=1 >/dev/null 2>&1)
 then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] rp_filter is set to 1 (strict) and src_valid_mark is set to 0 and could not be enabled"
+	log_error "rp_filter is set to 1 (strict) and src_valid_mark is set to 0 and could not be enabled"
 	stop_container
 fi
 
@@ -153,20 +139,20 @@ fi
 # PUID/PGID
 
 if [[ -z "${PUID}" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] PUID not defined. Defaulting to 1000"
+	log_info "PUID not defined. Defaulting to 1000"
 	export PUID="1000"
 else
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] PUID defined as $PUID"
+	log_info "PUID defined as $PUID"
 fi
 if [[ -z "${PGID}" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] PGID not defined. Defaulting to 1000"
+	log_info "PGID not defined. Defaulting to 1000"
 	export PGID="1000"
 else
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] PGID defined as $PGID"
+	log_info "PGID defined as $PGID"
 fi
 
 if [[ ! "${PUID}" =~ ^[0-9]+$ ]] || [[ ! "${PGID}" =~ ^[0-9]+$ ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] PUID and PGID must be numeric IDs, got PUID='${PUID}' PGID='${PGID}'"
+	log_error "PUID and PGID must be numeric IDs, got PUID='${PUID}' PGID='${PGID}'"
 	stop_container
 fi
 
@@ -174,15 +160,11 @@ fi
 # those IDs a name (ls, ps). An existing account with UID PUID is reused, otherwise 'qbittorrent' is (re)created.
 qbt_user="$(getent passwd "${PUID}" | cut -d: -f1)"
 if [[ -n "${qbt_user}" ]] && [[ "$(id -g "${qbt_user}")" == "${PGID}" ]]; then
-	if [[ "$DEBUG" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] User '${qbt_user}' with UID ${PUID} and GID ${PGID} already exists, nothing to do."
-	fi
+	log_debug "User '${qbt_user}' with UID ${PUID} and GID ${PGID} already exists, nothing to do."
 elif [[ -n "${qbt_user}" ]] && [[ "${qbt_user}" != "qbittorrent" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] UID ${PUID} belongs to the existing account '${qbt_user}' (primary GID $(id -g "${qbt_user}")). qBittorrent still runs as ${PUID}:${PGID}"
+	log_info "UID ${PUID} belongs to the existing account '${qbt_user}' (primary GID $(id -g "${qbt_user}")). qBittorrent still runs as ${PUID}:${PGID}"
 else
-	if [[ "$DEBUG" == "yes" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Creating user 'qbittorrent' with UID ${PUID} and GID ${PGID}"
-	fi
+	log_debug "Creating user 'qbittorrent' with UID ${PUID} and GID ${PGID}"
 	# Drop a stale 'qbittorrent' account (other UID/GID from a previous boot); BusyBox deluser also removes its same-named group
 	if getent passwd qbittorrent > /dev/null; then
 		deluser qbittorrent > /dev/null 2>&1
@@ -198,7 +180,7 @@ else
 		fi
 	fi
 	if [[ -z "${qbt_group}" ]] || ! adduser -D -u "${PUID}" -G "${qbt_group}" qbittorrent; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] Could not create user 'qbittorrent' with UID ${PUID} and GID ${PGID}. qBittorrent still runs as ${PUID}:${PGID}, but files will show numeric owners"
+		log_warn "Could not create user 'qbittorrent' with UID ${PUID} and GID ${PGID}. qBittorrent still runs as ${PUID}:${PGID}, but files will show numeric owners"
 	fi
 fi
 
@@ -209,9 +191,9 @@ VPN_ENABLED=$(echo "${VPN_ENABLED,,}" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
 export VPN_ENABLED
 
 if [[ -n "${VPN_ENABLED}" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_ENABLED defined as '${VPN_ENABLED}'"
+	log_info "VPN_ENABLED defined as '${VPN_ENABLED}'"
 else
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_ENABLED not defined (via -e VPN_ENABLED), defaulting to 'yes'"
+	log_info "VPN_ENABLED not defined (via -e VPN_ENABLED), defaulting to 'yes'"
 fi
 
 if [[ $VPN_ENABLED != "no" ]]; then
@@ -221,23 +203,23 @@ fi
 if [[ $VPN_ENABLED != "no" ]]; then
     # Check if VPN_TYPE is set.
 	if [[ -z "${VPN_TYPE}" ]]; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] VPN_TYPE not set, defaulting to Wireguard."
+		log_warn "VPN_TYPE not set, defaulting to Wireguard."
 		export VPN_TYPE="wireguard"
     elif [[ "${VPN_TYPE}" != "openvpn" && "${VPN_TYPE}" != "wireguard" ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] VPN_TYPE not set, as 'wireguard' or 'openvpn', defaulting to Wireguard."
+        log_warn "VPN_TYPE not set, as 'wireguard' or 'openvpn', defaulting to Wireguard."
 		export VPN_TYPE="wireguard"
 	else
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_TYPE defined as '${VPN_TYPE}'"
+		log_info "VPN_TYPE defined as '${VPN_TYPE}'"
 	fi
 elif [[ $VPN_ENABLED == "no" ]]; then
-	BIRed='\033[1;91m'
-	On_IGreen='\033[0;102m'
-	COLOR_RESET='\033[0m'
-	echo -e "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] ${On_IGreen}${BIRed}You have set the VPN to disabled, your connection will NOT be secure.${COLOR_RESET}"
+	BIRed=$'\033[1;91m'
+	On_IGreen=$'\033[0;102m'
+	COLOR_RESET=$'\033[0m'
+	log_warn "${On_IGreen}${BIRed}You have set the VPN to disabled, your connection will NOT be secure.${COLOR_RESET}"
 fi
 
 ##########
-# Save envirnonment variables
+# Save environment variables
 
 CONT_INIT_ENV="/var/run/s6/container_environment"
 mkdir -p $CONT_INIT_ENV

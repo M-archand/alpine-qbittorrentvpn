@@ -29,7 +29,7 @@ VPN_CONFIG="${VPN_CONFIGS[$RANDOM % ${#VPN_CONFIGS[@]}]}"
 VPN_CONFIG_BASENAME="${VPN_CONFIG##*/}"
 VPN_CONFIG_NAME="${VPN_CONFIG_BASENAME%.*}"
 
-echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Choosen VPN config: '${VPN_CONFIG_BASENAME}'"
+log_info "Chosen VPN config: '${VPN_CONFIG_BASENAME}'"
 
 export VPN_CONFIG
 export VPN_CONFIG_NAME
@@ -37,15 +37,15 @@ export VPN_CONFIG_NAME
 # If VPN config file not found in /config/openvpn or /config/wireguard then exit
 if [[ -z ${VPN_CONFIG} ]]; then
     if [[ ${VPN_TYPE} == "openvpn" ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] No OpenVPN config file found in /config/openvpn/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.ovpn'"
+        log_error "No OpenVPN config file found in /config/openvpn/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.ovpn'"
     else
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] No WireGuard config file found in /config/wireguard/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.conf'"
+        log_error "No WireGuard config file found in /config/wireguard/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.conf'"
     fi
     stop_container
 fi
 
 ##########
-# OpenVPN credentails
+# OpenVPN credentials
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
     # Remove auth-user-pass line(s) so credentials come only from the file/CLI,
@@ -55,21 +55,21 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
     printf '%s\n' "${vpn_config_stripped}" > "${VPN_CONFIG}"
     # Use credentials from credentials file if it exists
     if [[ -f /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Using credentials from /config/openvpn/${VPN_CONFIG_NAME}_credentials.conf"
+        log_info "Using credentials from /config/openvpn/${VPN_CONFIG_NAME}_credentials.conf"
     # Else use credentials from env vars if set and non empty
     elif [[ -n "${VPN_USERNAME}" ]] && [[ -n "${VPN_PASSWORD}" ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Copying credentials from env vars to /config/openvpn/${VPN_CONFIG_NAME}_credentials.conf"
+        log_info "Copying credentials from env vars to /config/openvpn/${VPN_CONFIG_NAME}_credentials.conf"
         echo "${VPN_USERNAME}" > /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf
         echo "${VPN_PASSWORD}" >> /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf
     # Else if both username and password are set but empty, assume custom authentication method
     elif [[ -z "${VPN_USERNAME-unset}" ]] && [[ -z "${VPN_PASSWORD-unset}" ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Credentials explicitly set to empty string"
+        log_info "Credentials explicitly set to empty string"
     # Else if a credentials.conf file exists, assume it is valid for all VPN configs
     elif [[ -f /config/openvpn/credentials.conf ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Copying credentials from /config/openvpn/credentials.conf to /config/openvpn/${VPN_CONFIG_NAME}_credentials.conf"
+        log_info "Copying credentials from /config/openvpn/credentials.conf to /config/openvpn/${VPN_CONFIG_NAME}_credentials.conf"
         cp /config/openvpn/credentials.conf /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf
     else
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] No credentials set and didn't find a credential config file."
+        log_error "No credentials set and didn't find a credential config file."
         stop_container
     fi
 fi
@@ -88,11 +88,11 @@ else
 fi
 
 if [[ -z "${vpn_remote_line}" ]]; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] VPN configuration file ${VPN_CONFIG} does not contain 'remote' line:"
+    log_error "VPN configuration file ${VPN_CONFIG} does not contain 'remote' line:"
     cat "${VPN_CONFIG}"
     stop_container
-elif [[ "$DEBUG" == "yes" ]]; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN remote line defined as '${vpn_remote_line}'"
+else
+    log_debug "VPN remote line defined as '${vpn_remote_line}'"
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
@@ -102,9 +102,9 @@ else
 fi
 
 if [[ -n "${VPN_REMOTE}" ]]; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_REMOTE defined as '${VPN_REMOTE}'"
+    log_info "VPN_REMOTE defined as '${VPN_REMOTE}'"
 else
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] VPN_REMOTE not found in ${VPN_CONFIG}"
+    log_error "VPN_REMOTE not found in ${VPN_CONFIG}"
     stop_container
 fi
 
@@ -115,22 +115,22 @@ else
 fi
 
 if [[ -n "${VPN_PORT}" ]]; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_PORT defined as '${VPN_PORT}'"
+    log_info "VPN_PORT defined as '${VPN_PORT}'"
 else
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] VPN_PORT not found in ${VPN_CONFIG}"
+    log_error "VPN_PORT not found in ${VPN_CONFIG}"
     stop_container
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
     export VPN_PROTOCOL=$( (grep -o -m 1 -P '(?<=^proto\s)[^\r\n]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~') < "${VPN_CONFIG}")
     if [[ -n "${VPN_PROTOCOL}" ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
+        log_info "VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
     else
         export VPN_PROTOCOL=$(echo "${vpn_remote_line}" | grep -o -m 1 -P 'udp|tcp-client|tcp$' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
         if [[ -n "${VPN_PROTOCOL}" ]]; then
-            echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
+            log_info "VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
         else
-            echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] VPN_PROTOCOL not found in ${VPN_CONFIG}, assuming udp"
+            log_warn "VPN_PROTOCOL not found in ${VPN_CONFIG}, assuming udp"
             export VPN_PROTOCOL="udp"
         fi
     fi
@@ -140,7 +140,7 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
     fi
 else
     export VPN_PROTOCOL="udp"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_PROTOCOL set as '${VPN_PROTOCOL}'"
+    log_info "VPN_PROTOCOL set as '${VPN_PROTOCOL}'"
 fi
 
 
@@ -148,7 +148,7 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
     VPN_DEVICE_TYPE=$( grep -o -m 1 -P '(?<=^dev\s)[^\s]+' < "${VPN_CONFIG}")
 
     if [[ -z "${VPN_DEVICE_TYPE}" ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] VPN_DEVICE_TYPE not found in ${VPN_CONFIG}"
+        log_error "VPN_DEVICE_TYPE not found in ${VPN_CONFIG}"
         stop_container
     fi
 
@@ -157,10 +157,10 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
         export VPN_DEVICE_TYPE="${VPN_DEVICE_TYPE}0"
     fi
     
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_DEVICE_TYPE defined as '${VPN_DEVICE_TYPE}'"
+    log_info "VPN_DEVICE_TYPE defined as '${VPN_DEVICE_TYPE}'"
 else
     export VPN_DEVICE_TYPE="$VPN_CONFIG_NAME"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] VPN_DEVICE_TYPE set as '${VPN_DEVICE_TYPE}'"
+    log_info "VPN_DEVICE_TYPE set as '${VPN_DEVICE_TYPE}'"
 fi
 
 ##########
@@ -172,7 +172,7 @@ if [[ "${VPN_TYPE}" == "wireguard" ]]; then
     wg_quick_bin="$(command -v wg-quick-custom)"
     sed -i -E '/cmd sysctl -q net\.ipv4\.conf\.all\.src_valid_mark=1/d' "$wg_quick_bin"
     if grep -q 'src_valid_mark=1' "$wg_quick_bin"; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] Could not strip src_valid_mark sysctl from wg-quick, WireGuard may fail in unprivileged containers"
+        log_warn "Could not strip src_valid_mark sysctl from wg-quick, WireGuard may fail in unprivileged containers"
     fi
 fi
 
@@ -181,7 +181,7 @@ fi
 
 resolvconf -a control < /etc/resolv.conf 2>/dev/null || true
 if ! resolvconf -u 2>/dev/null; then
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [WARNING] openresolv could not take over /etc/resolv.conf, DNS servers provided by the VPN may fail to apply"
+    log_warn "openresolv could not take over /etc/resolv.conf, DNS servers provided by the VPN may fail to apply"
 fi
 
 ##########
@@ -204,7 +204,7 @@ if [[ $VPN_ENABLED != "no" ]]; then
     fi
     
 	if [[ "${VPN_TYPE}" == "openvpn" ]]; then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Starting OpenVPN..."
+        log_info "Starting OpenVPN..."
         echo "--------------------"
 
         # Delete if file persisted between reboots
@@ -239,9 +239,7 @@ if [[ $VPN_ENABLED != "no" ]]; then
             )
         fi
 
-        if [[ "$DEBUG" == "yes" ]]; then
-            echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] OpenVPN command: openvpn ${openvpn_args[*]}"
-        fi
+        log_debug "OpenVPN command: openvpn ${openvpn_args[*]}"
 
         openvpn "${openvpn_args[@]}" | tee /var/log/openvpn.log &
 
@@ -250,16 +248,14 @@ if [[ $VPN_ENABLED != "no" ]]; then
 
         # Get OpenVPN PID
         openvpn_pid=$(pidof openvpn)
-        if [[ "$DEBUG" == "yes" ]]; then
-            echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] OpenVPN PID: $openvpn_pid"
-        fi
+        log_debug "OpenVPN PID: $openvpn_pid"
 
         # Wait for startup
         while :; do
             # Process exited
             if ! ps -p "$openvpn_pid" > /dev/null; then
                 echo "--------------------"
-                echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Failed to start OpenVPN"
+                log_error "Failed to start OpenVPN"
                 exit 1
             # Startup was successfull
             elif [[ -f /tmp/openvpn_startup_finished ]]; then
@@ -270,7 +266,7 @@ if [[ $VPN_ENABLED != "no" ]]; then
         echo "--------------------"
 
 	else
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Starting WireGuard..."
+		log_info "Starting WireGuard..."
 		echo "--------------------"
 		wg-quick-custom up "$VPN_CONFIG"
 		echo "--------------------"
@@ -284,7 +280,7 @@ if [[ "$DEBUG" == "yes" ]]; then
 fi
 
 ##########
-# Save envirnonment variables
+# Save environment variables
 
 CONT_INIT_ENV="/var/run/s6/container_environment"
 mkdir -p $CONT_INIT_ENV

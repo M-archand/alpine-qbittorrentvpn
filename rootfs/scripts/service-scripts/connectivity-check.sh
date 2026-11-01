@@ -9,20 +9,20 @@ if [[ $VPN_ENABLED == "no" ]]; then
 	sleep infinity
 fi
 
-echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Connectivity check running every ${HEALTH_CHECK_INTERVAL}s."
+log_info "Connectivity check running every ${HEALTH_CHECK_INTERVAL}s."
 
 while :; do
 	# HEALTH_CHECK_HOST reachable through the tunnel?
 	if ! ping_output=$(ping -c 1 -w "$HEALTH_CHECK_TIMEOUT" "$HEALTH_CHECK_HOST" 2>&1); then
 		if [[ "$DEBUG" == "yes" ]]; then
-			echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Last failed ping:"
+			log_debug "Last failed ping:"
 			echo "--------------------"
 			echo "$ping_output"
 			echo "--------------------"
 		fi
 
 		# Exit non-zero; finish halts the container so Docker restarts it.
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Network is down. Exiting.."
+		log_error "Network is down. Exiting.."
 		exit 1
 	fi
 

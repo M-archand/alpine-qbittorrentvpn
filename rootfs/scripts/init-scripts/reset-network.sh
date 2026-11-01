@@ -9,12 +9,12 @@ if [[ $VPN_ENABLED == "no" ]]; then
     exit 0
 fi
 
-echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Ensuring clean network state..."
+log_info "Ensuring clean network state..."
 
 ##########
 # Tear down stale WireGuard interfaces
 for wg_iface in $(ip -o link show type wireguard 2>/dev/null | awk -F': ' '{print $2}'); do
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Removing stale WireGuard interface: $wg_iface"
+    log_info "Removing stale WireGuard interface: $wg_iface"
     ip link delete "$wg_iface" 2>/dev/null
 done
 
@@ -38,4 +38,4 @@ ip -6 route flush table webui 2>/dev/null
 # Remove our entry from rt_tables (leave the file intact otherwise)
 sed -i '/^8080[[:space:]]\+webui$/d' /etc/iproute2/rt_tables 2>/dev/null
 
-echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Network state reset complete"
+log_info "Network state reset complete"

@@ -17,17 +17,17 @@ if [ ! -e "$QBITTORRENTLOGPATH" ]; then
 	chown -R "${PUID}":"${PGID}" /config/qBittorrent
 fi
 
-echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] qBittorrent writes its own log to $QBITTORRENTLOGPATH/$QBITTORRENTLOG. Startup/crash output is shown below and in the container log."
+log_info "qBittorrent writes its own log to $QBITTORRENTLOGPATH/$QBITTORRENTLOG. Startup/crash output is shown below and in the container log."
 
 # Check that the kill switch is in place and cannot be bypassed
 if [[ $VPN_ENABLED != "no" ]]; then
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Checking the kill switch: nftables rules present, $HEALTH_CHECK_HOST and $FIREWALL_CHECK_HOST unreachable over the docker interface (ICMP and TCP)..."
+	log_info "Checking the kill switch: nftables rules present, $HEALTH_CHECK_HOST and $FIREWALL_CHECK_HOST unreachable over the docker interface (ICMP and TCP)..."
 
 	if ! firewall_rules_intact || firewall_bypassed; then
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] Firewall is down!"
+		log_error "Firewall is down!"
 		stop_container
 	else
-		echo "$(date +'%Y-%m-%d %H:%M:%S') [INFO] Success: Could not connect. This means the firewall is most likely working properly."
+		log_info "Success: Could not connect. This means the firewall is most likely working properly."
 	fi
 fi
 

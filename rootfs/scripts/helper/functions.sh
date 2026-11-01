@@ -1,20 +1,40 @@
 # shellcheck shell=bash
 
+##########
+# Logging
+# Every line is "<timestamp> [LEVEL] message" so the container log can be grepped by level.
+# log_debug prints only when DEBUG=yes and always returns 0, so it is safe under set -e.
+
+_log() {
+    local level="$1"
+    shift
+    printf '%s [%s] %s\n' "$(date +'%Y-%m-%d %H:%M:%S')" "${level}" "$*"
+}
+
+log_info() { _log INFO "$@"; }
+log_warn() { _log WARNING "$@"; }
+log_error() { _log ERROR "$@"; }
+log_debug() {
+    if [[ "${DEBUG:-}" == "yes" ]]; then
+        _log DEBUG "$@"
+    fi
+}
+
 test_connection () {
     # Resolve HEALTH_CHECK_HOST if domain
     if (ipcalc -c "$HEALTH_CHECK_HOST" > /dev/null 2>&1); then
         health_check_ip=$HEALTH_CHECK_HOST
     else
         health_check_ip="$(dig +short "$HEALTH_CHECK_HOST" | head -n 1)"
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] $HEALTH_CHECK_HOST resolved to $health_check_ip"
+        log_debug "$HEALTH_CHECK_HOST resolved to $health_check_ip"
     fi
     
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Route: $(ip r get "$health_check_ip" | head -n 1)"
+    log_debug "Route: $(ip r get "$health_check_ip" | head -n 1)"
 
     if (ping -c 1 "$health_check_ip" > /dev/null 2>&1); then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Ping to $health_check_ip succeeded"
+        log_debug "Ping to $health_check_ip succeeded"
     else
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Ping to $health_check_ip failed"
+        log_debug "Ping to $health_check_ip failed"
     fi
 
     # Resolve VPN_REMOTE if domain
@@ -24,13 +44,13 @@ test_connection () {
         vpn_remote_ip=$VPN_REMOTE
     else
         vpn_remote_ip="$(dig +short "$VPN_REMOTE" | head -n 1)"
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] $VPN_REMOTE resolved to $vpn_remote_ip"
+        log_debug "$VPN_REMOTE resolved to $vpn_remote_ip"
     fi
 
     if (ping -w 1 -c 1 -I "$DOCKER_INTERFACE" "$vpn_remote_ip" > /dev/null 2>&1); then
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Ping to $vpn_remote_ip via $DOCKER_INTERFACE succeeded"
+        log_debug "Ping to $vpn_remote_ip via $DOCKER_INTERFACE succeeded"
     else
-        echo "$(date +'%Y-%m-%d %H:%M:%S') [DEBUG] Ping to $vpn_remote_ip via $DOCKER_INTERFACE failed"
+        log_debug "Ping to $vpn_remote_ip via $DOCKER_INTERFACE failed"
     fi
 }
 
@@ -39,7 +59,7 @@ firewall_rules_intact() {
     local chain
     for chain in input output; do
         if ! nft list chain inet qbt-firewall "$chain" 2>/dev/null | grep -q 'policy drop;'; then
-            echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] nftables chain 'inet qbt-firewall $chain' with policy drop is missing"
+            log_error "nftables chain 'inet qbt-firewall $chain' with policy drop is missing"
             return 1
         fi
     done
@@ -64,7 +84,7 @@ firewall_bypassed() {
 
     for i in "${!hosts[@]}"; do
         if wait "${ping_pids[$i]}"; then
-            echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] ICMP echo to ${hosts[$i]} over ${DOCKER_INTERFACE} succeeded"
+            log_error "ICMP echo to ${hosts[$i]} over ${DOCKER_INTERFACE} succeeded"
             bypassed=0
         fi
         wait "${curl_pids[$i]}"
@@ -72,7 +92,7 @@ firewall_bypassed() {
         connect_time="$(cat "${curl_outputs[$i]}" 2>/dev/null)"
         rm -f "${curl_outputs[$i]}"
         if [[ "$rc" == "0" ]] || awk -v t="${connect_time:-0}" 'BEGIN { exit !(t + 0 > 0) }'; then
-            echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR] TCP connection to ${hosts[$i]}:53 over ${DOCKER_INTERFACE} succeeded"
+            log_error "TCP connection to ${hosts[$i]}:53 over ${DOCKER_INTERFACE} succeeded"
             bypassed=0
         fi
     done
@@ -93,19 +113,19 @@ stop_container() {
 }
 
 print_exit_info () {
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR INFO] 'ip addr show' output:"
+    log_error "'ip addr show' output:"
 	echo "--------------------"
 	ip addr show
 	echo "--------------------"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR INFO] 'ip route show table main' output:"
+    log_error "'ip route show table main' output:"
 	echo "--------------------"
 	ip route show table main
 	echo "--------------------"
-	echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR INFO] 'ip rule' output:"
+	log_error "'ip rule' output:"
 	echo "--------------------"
 	ip rule
 	echo "--------------------"
-    echo "$(date +'%Y-%m-%d %H:%M:%S') [ERROR INFO] 'netstat -lpn' output:"
+    log_error "'netstat -lpn' output:"
 	echo "--------------------"
 	netstat -lpn
 	echo "--------------------"
