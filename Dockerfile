@@ -1,12 +1,14 @@
 # Base images are pinned by digest. Dependabot (.github/dependabot.yml) proposes updates
+# This image is the only place the Go toolchain version is pinned; build/dwk/go.mod states a minimum language version
 FROM golang:1.27-alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS go-builder
 
 WORKDIR /app
 
 COPY build/dwk/go.mod build/dwk/main.go ./
+# GOTOOLCHAIN=local: never download another toolchain at build time, fail instead if go.mod asks for a newer one
 RUN \
     go mod download; \
-    CGO_ENABLED=0 GOOS=linux go build -o ./dwk
+    GOTOOLCHAIN=local CGO_ENABLED=0 GOOS=linux go build -o ./dwk
 
 
 FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
