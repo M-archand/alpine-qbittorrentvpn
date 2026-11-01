@@ -142,10 +142,4 @@ fi
 ##########
 # Save environment variables
 
-CONT_INIT_ENV="/var/run/s6/container_environment"
-mkdir -p $CONT_INIT_ENV
-export_vars=("UMASK")
-
-for name in "${export_vars[@]}"; do
-	echo -n "${!name}" > "$CONT_INIT_ENV/$name"
-done
+export_contenv UMASK

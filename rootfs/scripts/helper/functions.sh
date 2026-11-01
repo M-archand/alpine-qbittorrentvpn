@@ -20,6 +20,25 @@ log_debug() {
     fi
 }
 
+##########
+# Container environment
+# Variables written here are visible to every later oneshot and longrun started through with-contenv.
+# Arrays are written space separated.
+
+CONT_INIT_ENV="/var/run/s6/container_environment"
+
+# Usage: export_contenv VAR...
+export_contenv() {
+    local _contenv_name
+    mkdir -p "${CONT_INIT_ENV}"
+    for _contenv_name in "$@"; do
+        # Fresh nameref per variable: assigning to a bound nameref would write through to the previous target
+        local -n _contenv_ref="${_contenv_name}"
+        printf '%s' "${_contenv_ref[*]:-}" > "${CONT_INIT_ENV}/${_contenv_name}"
+        unset -n _contenv_ref
+    done
+}
+
 test_connection () {
     # Resolve HEALTH_CHECK_HOST if domain
     if (ipcalc -c "$HEALTH_CHECK_HOST" > /dev/null 2>&1); then
