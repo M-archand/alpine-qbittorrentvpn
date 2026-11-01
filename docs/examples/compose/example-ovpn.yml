@@ -1,6 +1,6 @@
 services:
   qbittorrent:
-    image: trigus42/qbittorrentvpn
+    image: ghcr.io/m-archand/alpine-qbittorrentvpn:stable
     container_name: qbittorrent
     environment:
       - VPN_TYPE=openvpn

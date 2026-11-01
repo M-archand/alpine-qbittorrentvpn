@@ -3,7 +3,7 @@
 
 # ==========================================
 # This is an example of an s6-rc oneshot init script.
-# If you mount the parent "my-startup-task" directory to /custom-init/my-startup-task
+# If you mount the parent "fw-custom-app" directory to /custom-init/fw-custom-app
 # inside the container, this script will run once when the container boots!
 #
 # Specifically, this script adds custom nftables rules and routing to route a 

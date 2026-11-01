@@ -11,7 +11,8 @@ RUN \
 
 FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
 
-# Exit if one of the cont-init.d scripts fails
+# Exit if an init oneshot fails unexpectedly. Expected failures park the container instead (fail_init in
+# rootfs/scripts/helper/functions.sh)
 ENV S6_BEHAVIOUR_IF_STAGE2_FAILS=2
 ENV S6_STAGE2_HOOK=/scripts/helper/setup-custom-s6.sh
 

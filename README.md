@@ -1,7 +1,6 @@
 # qBittorrentVPN
-[![Codacy Badge](https://api.codacy.com/project/badge/Grade/d10a568dc319461b844c49d8535150a3)](https://app.codacy.com/gh/Trigus42/alpine-qbittorrentvpn?utm_source=github.com&utm_medium=referral&utm_content=Trigus42/alpine-qbittorrentvpn&utm_campaign=Badge_Grade_Settings)
-[![Docker Pulls](https://badgen.net/docker/pulls/trigus42/qbittorrentvpn)](https://hub.docker.com/r/trigus42/qbittorrentvpn)
-[![Docker Image Size (tag)](https://badgen.net/docker/size/trigus42/qbittorrentvpn/latest)](https://hub.docker.com/r/trigus42/qbittorrentvpn)
+[![Publish Docker image](https://github.com/M-archand/alpine-qbittorrentvpn/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/M-archand/alpine-qbittorrentvpn/actions/workflows/docker-publish.yml)
+[![Container image](https://img.shields.io/badge/ghcr.io-m--archand%2Falpine--qbittorrentvpn-blue)](https://github.com/M-archand/alpine-qbittorrentvpn/pkgs/container/alpine-qbittorrentvpn)
 
 Docker container which runs the latest qBittorrent-nox client while connecting to WireGuard or OpenVPN with netfilter killswitch to prevent IP leakage when the tunnel goes down.
 
@@ -11,7 +10,7 @@ Docker container which runs the latest qBittorrent-nox client while connecting t
 * Selectively enable or disable **WireGuard** or **OpenVPN** support
 * **IPv6** support
 * Configurable **UID** and **GID** for config files and /downloads for qBittorrent
-* Build for **amd64**, **arm64**, **armv8** and **armv7**
+* Built for **amd64**, **arm64**, **armv7** and **armv6**
 * ...
 
 # Run container:
@@ -25,18 +24,21 @@ Then start the container by running:
 docker compose up -d
 ```
 
+Keep a restart policy such as `restart: unless-stopped` (set in all examples). When the tunnel stops passing traffic the container halts itself and relies on Docker to start it again with a fresh tunnel; without a restart policy it simply stays stopped.
+
 &NewLine;
 
 ## Image Tags
 
+Images are published to the GitHub Container Registry as `ghcr.io/m-archand/alpine-qbittorrentvpn`.
+
 | Tag | Description |
 |----------|----------|
-| `trigus42/qbittorrentvpn:latest` | The latest image with the most recent version of qBittorrent |
-| `trigus42/qbittorrentvpn:qbtx.x.x` | Image with qBittorrent version x.x.x |
-| `trigus42/qbittorrentvpn:COMMIT-HASH` | Image built from the commit with corresponding SHA hash |
-| `trigus42/qbittorrentvpn:COMMIT-HASH-qbtx.x.x` | Image built from the commit with corresponding SHA hash and qBittorrent version x.x.x |
+| `ghcr.io/m-archand/alpine-qbittorrentvpn:latest` | Built from `master` on every push, and rebuilt daily when a new qBittorrent release is detected |
+| `ghcr.io/m-archand/alpine-qbittorrentvpn:X.Y.Z` | Manual release, built once from a chosen qBittorrent release and never changed afterwards |
+| `ghcr.io/m-archand/alpine-qbittorrentvpn:stable` | Always points at the most recent `X.Y.Z` manual release |
 
-WARNING: Only with the `latest` tag will you continuously receive updates.
+`latest` and `stable` move; pin `X.Y.Z` to stay on one exact build.
 
 ## Environment Variables
 | Variable | Function | Example | Default |
@@ -131,7 +133,7 @@ If you don't specify any tags, the latest release version will be used.
 
 &NewLine;
 ```sh
-$ git clone https://github.com/Trigus42/alpine-qbittorrentvpn.git
+$ git clone https://github.com/M-archand/alpine-qbittorrentvpn.git
 $ cd alpine-qbittorrentvpn
 $ QBITTORRENT_TAG={TAG} docker build -f Dockerfile -t qbittorrentvpn .
 ```
@@ -154,7 +156,7 @@ Upon opening an issue, kindly provide the following details:
 - Full logs from container boot to exit, preferably with the `DEBUG=yes` environment variable set.
 - Your Docker compose file or Docker run command.
 - Depending on your situation, other relevant information such as:
-  - The image where the issue first arose. Including tag information such as date and commit hash can be immensely useful, especially if you suspect that a recent change may have introduced the problem.
+  - The image where the issue first arose: its tag and the `Image build from commit ...` line printed at the top of the container log. This is immensely useful if you suspect that a recent change introduced the problem.
   - Your VPN config file, with any keys and other sensitive information removed.
   - Any additional details that may be relevant to your specific situation.
 
