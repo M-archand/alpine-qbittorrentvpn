@@ -89,10 +89,11 @@ fi
 
 # Parse values from the ovpn or conf file
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
-    export vpn_remote_line=$( (grep -o -m 1 -P '(?<=^remote\s)[^\n\r]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~') < "${VPN_CONFIG}")
+    vpn_remote_line=$( (grep -o -m 1 -P '(?<=^remote\s)[^\n\r]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~') < "${VPN_CONFIG}")
 else
-    export vpn_remote_line=$( (grep -o -m 1 -P '(?<=^Endpoint)(\s{0,})[^\n\r]+' | sed -e 's~^[=\ ]*~~') < "${VPN_CONFIG}")
+    vpn_remote_line=$( (grep -o -m 1 -P '(?<=^Endpoint)(\s{0,})[^\n\r]+' | sed -e 's~^[=\ ]*~~') < "${VPN_CONFIG}")
 fi
+export vpn_remote_line
 
 if [[ -z "${vpn_remote_line}" ]]; then
     log_error "VPN configuration file ${VPN_CONFIG_SOURCE} does not contain 'remote' line:"
@@ -103,10 +104,11 @@ else
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
-    export VPN_REMOTE=$(echo "${vpn_remote_line}" | grep -o -m 1 -P '^[^\s\r\n]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+    VPN_REMOTE=$(echo "${vpn_remote_line}" | grep -o -m 1 -P '^[^\s\r\n]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
 else
-    export VPN_REMOTE=$(echo "${vpn_remote_line}" | grep -o -m 1 -P '((?<=\[)[a-f0-9:]+(?=\]:\d+\s*$))|([^\s\[\]]+)(?=:\d+\s*$)')
+    VPN_REMOTE=$(echo "${vpn_remote_line}" | grep -o -m 1 -P '((?<=\[)[a-f0-9:]+(?=\]:\d+\s*$))|([^\s\[\]]+)(?=:\d+\s*$)')
 fi
+export VPN_REMOTE
 
 if [[ -n "${VPN_REMOTE}" ]]; then
     log_info "VPN_REMOTE defined as '${VPN_REMOTE}'"
@@ -115,10 +117,11 @@ else
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
-    export VPN_PORT=$(echo "${vpn_remote_line}" | grep -o -m 1 -P '^[^#;]*\s\K\d{2,5}(?=.*$)')
+    VPN_PORT=$(echo "${vpn_remote_line}" | grep -o -m 1 -P '^[^#;]*\s\K\d{2,5}(?=.*$)')
 else
-    export VPN_PORT=$(echo "${vpn_remote_line}" | grep -o -m 1 -P '^[^#]*:\K\d{2,5}(?=.*$)')
+    VPN_PORT=$(echo "${vpn_remote_line}" | grep -o -m 1 -P '^[^#]*:\K\d{2,5}(?=.*$)')
 fi
+export VPN_PORT
 
 if [[ -n "${VPN_PORT}" ]]; then
     log_info "VPN_PORT defined as '${VPN_PORT}'"
@@ -127,11 +130,11 @@ else
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
-    export VPN_PROTOCOL=$( (grep -o -m 1 -P '(?<=^proto\s)[^\r\n]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~') < "${VPN_CONFIG}")
+    VPN_PROTOCOL=$( (grep -o -m 1 -P '(?<=^proto\s)[^\r\n]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~') < "${VPN_CONFIG}")
     if [[ -n "${VPN_PROTOCOL}" ]]; then
         log_info "VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
     else
-        export VPN_PROTOCOL=$(echo "${vpn_remote_line}" | grep -o -m 1 -P 'udp|tcp-client|tcp$' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
+        VPN_PROTOCOL=$(echo "${vpn_remote_line}" | grep -o -m 1 -P 'udp|tcp-client|tcp$' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')
         if [[ -n "${VPN_PROTOCOL}" ]]; then
             log_info "VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
         else
@@ -144,9 +147,10 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
         export VPN_PROTOCOL="tcp"
     fi
 else
-    export VPN_PROTOCOL="udp"
+    VPN_PROTOCOL="udp"
     log_info "VPN_PROTOCOL set as '${VPN_PROTOCOL}'"
 fi
+export VPN_PROTOCOL
 
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then

@@ -114,19 +114,14 @@ fi
 # Reverse path filtering compatibility
 # Required for wg-quick and WebUI PBR
 
+# Fatal when reverse path filtering is strict (1) on all or the docker interface, src_valid_mark is off on both,
+# and enabling it fails
 if \
-	# Check if reverse path filtering is set to 1 (strict)
-	( \
-		[ "$(sysctl net.ipv4.conf.all.rp_filter)" == "net.ipv4.conf.all.rp_filter = 1" ] || \
-		[ "$(sysctl net.ipv4.conf.$DOCKER_INTERFACE.rp_filter)" == "net.ipv4.conf.$DOCKER_INTERFACE.rp_filter = 1" ] \
-	) && \
-	# Check if src_valid_mark is disabled
-	( \
-		[ "$(sysctl net.ipv4.conf.all.src_valid_mark)" != "net.ipv4.conf.all.src_valid_mark = 1" ] && \
-		[ "$(sysctl net.ipv4.conf.$DOCKER_INTERFACE.src_valid_mark)" != "net.ipv4.conf.$DOCKER_INTERFACE.src_valid_mark = 1" ] \
-	) && \
-	# Try to enable src_valid_mark
-	! (sysctl -q net.ipv4.conf.$DOCKER_INTERFACE.src_valid_mark=1 >/dev/null 2>&1)
+	{ [ "$(sysctl net.ipv4.conf.all.rp_filter)" == "net.ipv4.conf.all.rp_filter = 1" ] || \
+	  [ "$(sysctl "net.ipv4.conf.${DOCKER_INTERFACE}.rp_filter")" == "net.ipv4.conf.${DOCKER_INTERFACE}.rp_filter = 1" ]; } && \
+	{ [ "$(sysctl net.ipv4.conf.all.src_valid_mark)" != "net.ipv4.conf.all.src_valid_mark = 1" ] && \
+	  [ "$(sysctl "net.ipv4.conf.${DOCKER_INTERFACE}.src_valid_mark")" != "net.ipv4.conf.${DOCKER_INTERFACE}.src_valid_mark = 1" ]; } && \
+	! sysctl -q "net.ipv4.conf.${DOCKER_INTERFACE}.src_valid_mark=1" >/dev/null 2>&1
 then
 	fail_init "rp_filter is set to 1 (strict) and src_valid_mark is set to 0 and could not be enabled"
 fi

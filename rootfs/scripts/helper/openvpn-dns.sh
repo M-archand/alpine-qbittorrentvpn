@@ -1,7 +1,10 @@
 #!/bin/bash
 # OpenVPN --up/--down hook: apply the DNS servers pushed by the VPN server (dhcp-option DNS/DNS6/DOMAIN) to
 # /etc/resolv.conf through openresolv, exclusively (same as wg-quick's DNS=), and remove them again on down.
+# script_type, dev and foreign_option_<n> are environment variables set by OpenVPN for its hooks.
+# shellcheck disable=SC2154
 
+# shellcheck disable=SC1091
 source /scripts/helper/functions.sh
 
 case "${script_type:-}" in

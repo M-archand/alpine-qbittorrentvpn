@@ -143,6 +143,11 @@ Build for all supported architectures:
 $ QBITTORRENT_TAG={TAG} docker buildx bake -f bake.yml
 ```
 
+Lint the shell scripts (the same check CI runs, needs Docker):
+```sh
+$ bash tests/shellcheck.sh
+```
+
 If you want to use this command to push the images to a registry (append `--push` to the above command), you have to modify the `image` setting in `bake.yml`.
 
 # Reporting Issues
