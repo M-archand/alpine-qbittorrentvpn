@@ -22,8 +22,17 @@ else
     mapfile -t VPN_CONFIGS < <( find /config/wireguard -maxdepth 1 -name "*.conf" -print )
 fi
 
+# No config: park with a clear message (indexing an empty array below would print a "division by 0" first)
+if (( ${#VPN_CONFIGS[@]} == 0 )); then
+    if [[ ${VPN_TYPE} == "openvpn" ]]; then
+        fail_init "No OpenVPN config file found in /config/openvpn/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.ovpn'"
+    else
+        fail_init "No WireGuard config file found in /config/wireguard/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.conf'"
+    fi
+fi
+
 # Choose random config
-VPN_CONFIG="${VPN_CONFIGS[$RANDOM % ${#VPN_CONFIGS[@]}]}"
+VPN_CONFIG="${VPN_CONFIGS[RANDOM % ${#VPN_CONFIGS[@]}]}"
 
 # Get the VPN_CONFIG name without the path and extension
 VPN_CONFIG_BASENAME="${VPN_CONFIG##*/}"
@@ -33,15 +42,6 @@ log_info "Chosen VPN config: '${VPN_CONFIG_BASENAME}'"
 
 export VPN_CONFIG
 export VPN_CONFIG_NAME
-
-# If VPN config file not found in /config/openvpn or /config/wireguard then exit
-if [[ -z ${VPN_CONFIG} ]]; then
-    if [[ ${VPN_TYPE} == "openvpn" ]]; then
-        fail_init "No OpenVPN config file found in /config/openvpn/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.ovpn'"
-    else
-        fail_init "No WireGuard config file found in /config/wireguard/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.conf'"
-    fi
-fi
 
 ##########
 # Working copy

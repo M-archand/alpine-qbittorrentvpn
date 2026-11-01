@@ -111,11 +111,16 @@ elif ! grep -Exq 'WebUI\\Password_PBKDF2=.+' "$qbt_config_path"; then
 	log_info "WebUI password not set. To access the WebUI set a password or get a temporary password from the qBittorrent logs."
 fi
 
-# VPN interface binding
+# VPN interface binding. Cleared when the VPN is disabled, otherwise a binding left behind by an earlier VPN run
+# keeps qBittorrent on an interface that no longer exists
 if [[ ${VPN_ENABLED,,} != 'no' ]]; then
 	log_debug "Setting qBt bind interface to \"${VPN_DEVICE_TYPE}\""
 	qbt_set_setting BitTorrent 'Session\Interface' "${VPN_DEVICE_TYPE}"
 	qbt_set_setting BitTorrent 'Session\InterfaceName' "${VPN_DEVICE_TYPE}"
+else
+	log_debug "VPN disabled, clearing the qBt bind interface"
+	qbt_set_setting BitTorrent 'Session\Interface' ""
+	qbt_set_setting BitTorrent 'Session\InterfaceName' ""
 fi
 
 ##########
