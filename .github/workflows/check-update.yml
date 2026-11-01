@@ -17,8 +17,10 @@ jobs:
         uses: dawidd6/action-download-artifact@v28
         with:
           name: qbt-release-info
-          workflow_conclusion: success
           workflow: docker-publish.yml
+          workflow_conclusion: success
+          branch: master
+          search_artifacts: true
           if_no_artifact_found: warn
 
       - name: Get latest release
@@ -34,9 +36,9 @@ jobs:
 
           # Compare the fetched release tag with the previous release tag
           if [ "${{ steps.get-qbt-release.outputs.release_tag }}" == "$PREVIOUS_RELEASE" ]; then
-            echo release_changed=false | tee -a $GITHUB_OUTPUT
+            echo release_changed=false | tee -a "$GITHUB_OUTPUT"
           else
-            echo release_changed=true | tee -a $GITHUB_OUTPUT
+            echo release_changed=true | tee -a "$GITHUB_OUTPUT"
           fi
 
       - name: Call workflow to build docker image
