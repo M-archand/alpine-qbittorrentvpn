@@ -77,8 +77,8 @@ RUN \
 VOLUME /config /downloads
 EXPOSE 8080
 
-# Unhealthy while stop_container() has the container parked (failed init, tripped kill switch) or qBittorrent is not
-# up, see rootfs/scripts/helper/healthcheck.sh. Failures inside start-period (tunnel coming up) do not count.
+# Unhealthy while the container is parked by fail_init()/trip_kill_switch() (failed init, tripped kill switch) or
+# qBittorrent is not up, see rootfs/scripts/helper/healthcheck.sh. Failures inside start-period (tunnel coming up) do not count.
 HEALTHCHECK --interval=20s --timeout=5s --start-period=60s --retries=2 CMD ["/scripts/helper/healthcheck.sh"]
 
 CMD ["/init"]

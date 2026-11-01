@@ -24,7 +24,7 @@ if [[ $VPN_ENABLED != "no" ]]; then
 	log_info "Checking the kill switch: nftables rules present, $HEALTH_CHECK_HOST and $FIREWALL_CHECK_HOST unreachable over the docker interface (ICMP and TCP)..."
 
 	if ! firewall_rules_intact || firewall_bypassed; then
-		stop_container "Firewall is down! Not starting qBittorrent."
+		trip_kill_switch "Firewall is down! Not starting qBittorrent."
 	else
 		log_info "Success: Could not connect. This means the firewall is most likely working properly."
 	fi

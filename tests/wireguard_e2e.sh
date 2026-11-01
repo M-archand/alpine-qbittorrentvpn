@@ -144,8 +144,9 @@ fi
 echo "Tripping the kill switch (deleting the nftables table)..."
 docker exec qbittorrentvpn nft delete table inet qbt-firewall
 
-# firewall-check must call stop_container: qBittorrent gone, container still up, health unhealthy with the reason
-MAX_T_WAIT=90
+# firewall-check must call trip_kill_switch: qBittorrent and both check services down, container still up with no
+# restart (connectivity-check's finish must not halt), health unhealthy with the reason
+MAX_T_WAIT=150
 T_WAIT=0
 while [ "$(docker inspect --format '{{.State.Health.Status}}' qbittorrentvpn)" != "unhealthy" ]; do
     sleep 2
@@ -159,14 +160,17 @@ while [ "$(docker inspect --format '{{.State.Health.Status}}' qbittorrentvpn)" !
     fi
 done
 HEALTH_OUTPUT=$(docker inspect --format '{{range .State.Health.Log}}{{println .Output}}{{end}}' qbittorrentvpn | grep . | tail -n 1)
-if [ "$(docker inspect --format '{{.State.Status}}' qbittorrentvpn)" != "running" ] || docker exec qbittorrentvpn pidof qbittorrent-nox > /dev/null 2>&1 || ! echo "$HEALTH_OUTPUT" | grep -q "Firewall is down"; then
-    echo "Expected a running container without qbittorrent-nox and a health output naming the trip, got: ${HEALTH_OUTPUT}"
+RESTARTS=$(docker inspect --format '{{.RestartCount}}' qbittorrentvpn)
+FW_UP=$(docker exec qbittorrentvpn /command/s6-svstat -o up /run/service/service-firewall-check)
+CC_UP=$(docker exec qbittorrentvpn /command/s6-svstat -o up /run/service/service-connectivity-check)
+if [ "$(docker inspect --format '{{.State.Status}}' qbittorrentvpn)" != "running" ] || [ "$RESTARTS" != "0" ] || [ "$FW_UP" != "false" ] || [ "$CC_UP" != "false" ] || docker exec qbittorrentvpn pidof qbittorrent-nox > /dev/null 2>&1 || ! echo "$HEALTH_OUTPUT" | grep -q "Firewall is down"; then
+    echo "Expected a running container with 0 restarts, qbittorrent-nox and both check services down and a health output naming the trip, got: restarts=${RESTARTS} firewall-check up=${FW_UP} connectivity-check up=${CC_UP} health=${HEALTH_OUTPUT}"
     docker inspect --format '{{json .State}}' qbittorrentvpn
     docker logs qbittorrentvpn
     cleanup
     exit 1
 fi
-echo "Kill-switch trip parked the container: unhealthy, qBittorrent stopped, reason: ${HEALTH_OUTPUT}"
+echo "Kill-switch trip parked the container: unhealthy, 0 restarts, qBittorrent and check services stopped, reason: ${HEALTH_OUTPUT}"
 
 echo "Test completed successfully"
 cleanup

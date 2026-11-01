@@ -13,11 +13,11 @@ fi
 
 ##########
 # Error handling
-# Any failing command below parks the container (see stop_container in functions.sh) instead of leaving a
+# Any failing command below parks the container (see fail_init in functions.sh) instead of leaving a
 # half-configured network behind. qBittorrent has not started at this point, so nothing can leak.
 
 fail() {
-	stop_container "Network setup failed: $1"
+	fail_init "Network setup failed: $1"
 }
 
 on_error() {

@@ -1,6 +1,15 @@
 #!/command/with-contenv bash
 # shellcheck shell=bash
 
+# shellcheck disable=SC1091
+source /scripts/helper/functions.sh
+
+# Kill switch tripped: trip_kill_switch() brought this service down on purpose, the
+# container stays parked (sticky stop, no restart, reports unhealthy).
+if [[ -f "${STOP_MARKER}" ]]; then
+	exit 0
+fi
+
 # Tunnel down: halt so Docker restarts and re-establishes it. Safe because the
 # kill switch blocks all traffic while the tunnel is down.
 /run/s6/basedir/bin/halt

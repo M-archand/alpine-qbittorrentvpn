@@ -2,7 +2,7 @@
 # Docker HEALTHCHECK (see Dockerfile). Exit 0 = healthy, 1 = unhealthy. stdout is kept by Docker under
 # .State.Health.Log, so 'docker inspect' shows why the container is unhealthy without reading its log.
 #
-#   unhealthy  stop_container() parked the container (failed init or tripped kill switch), STOP_MARKER holds the reason
+#   unhealthy  fail_init()/trip_kill_switch() parked the container (failed init, tripped kill switch), STOP_MARKER holds the reason
 #   unhealthy  qBittorrent's s6 service is not up (still booting, covered by --start-period, or crashed)
 #   healthy    otherwise
 
@@ -10,7 +10,7 @@
 source /scripts/helper/functions.sh
 
 if [[ -f "${STOP_MARKER}" ]]; then
-    echo "Container parked by stop_container: $(cat "${STOP_MARKER}")"
+    echo "Container parked: $(cat "${STOP_MARKER}")"
     exit 1
 fi
 

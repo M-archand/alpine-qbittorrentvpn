@@ -121,32 +121,55 @@ firewall_bypassed() {
 
 ##########
 # Fatal errors
-# One contract for every fatal condition, failed init and tripped kill switch alike: the container is parked, never
-# exited. qBittorrent is stopped, the reason is written to STOP_MARKER and the caller sleeps forever. The container
-# stays "running" so no restart policy loops it back into the same failure (or through the leak window again), and
-# the Docker HEALTHCHECK (/scripts/helper/healthcheck.sh) reports it unhealthy while the marker exists.
-# init-environment removes the marker, so a restart gives a clean slate.
+# One contract for every fatal condition: the container is parked, never exited. The reason goes to STOP_MARKER,
+# qBittorrent does not run, and the container stays "running" so no restart policy loops it back into the same failure
+# (or through the leak window again). The Docker HEALTHCHECK (/scripts/helper/healthcheck.sh) reports it unhealthy
+# while the marker exists; init-environment removes the marker, so a restart gives a clean slate.
+# Two entry points, neither returns:
+#   fail_init        for oneshots (init-*): sleeps forever, so the init bundle never completes and no longrun starts
+#   trip_kill_switch for longruns (firewall-check, qBittorrent pre-start check): downs qBittorrent and the check
+#                    services, then exits the caller
 
 STOP_MARKER="/run/qbt-stopped"
 
-# Usage: stop_container [reason]
-stop_container() {
-    # Off so a caller running under errexit (network.sh, the tunnel start in vpn.sh) cannot bail out halfway through
+_park() {
+    # errexit off so a caller running under it (network.sh, the tunnel start in vpn.sh) cannot bail out halfway through
     set +e
     local reason="${*:-see the container log}"
     log_error "${reason}"
     log_error "Container parked: qBittorrent is stopped and the health check reports unhealthy until the container is restarted"
-    # Written first: called from a longrun, the s6-svc on the caller's own service below may kill this shell
     printf '%s\n' "${reason}" > "${STOP_MARKER}"
+}
 
-    s6-svc -k -d /run/service/service-qbittorrent/ >/dev/null 2>&1
-    s6-svc -k -d /run/service/service-firewall-check/ >/dev/null 2>&1
-    s6-svc -k -d /run/service/service-connectivity-check/ >/dev/null 2>&1
+# Usage: fail_init reason
+fail_init() {
+    _park "$@"
+    sleep infinity
+}
+
+# Usage: trip_kill_switch reason
+# service-qbittorrent gets SIGKILL (every second it runs without the kill switch leaks), service-connectivity-check
+# and service-firewall-check get SIGTERM; all three are wanted down, so s6 does not restart them, and
+# service-connectivity-check/finish skips its halt while the marker exists. The caller's own service is only marked
+# "do not restart" (s6-svc -O) instead of being signalled, so this function runs to the end whichever longrun calls it,
+# and that service goes down with the exit below.
+trip_kill_switch() {
+    _park "$@"
+    local svc
+    for svc in service-qbittorrent service-connectivity-check service-firewall-check; do
+        if [[ "$(s6-svstat -o pid "/run/service/${svc}" 2>/dev/null)" == "$$" ]]; then
+            s6-svc -O "/run/service/${svc}" >/dev/null 2>&1
+        elif [[ "${svc}" == "service-qbittorrent" ]]; then
+            s6-svc -k -d "/run/service/${svc}" >/dev/null 2>&1
+        else
+            s6-svc -d "/run/service/${svc}" >/dev/null 2>&1
+        fi
+    done
 
     # Ensure no qbittorrent-nox survives the service kill.
     killall qbittorrent-nox >/dev/null 2>&1
 
-    sleep infinity
+    exit 0
 }
 
 print_exit_info () {
