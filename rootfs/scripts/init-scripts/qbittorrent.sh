@@ -74,41 +74,21 @@ if [ ! -e $qbt_config_path ]; then
 	chown "${PUID}":"${PGID}" $qbt_config_path
 fi
 
-# The mess down here checks if SSL is enabled.
+# SSL: self-signed certificate and key generated on first use, qBittorrent pointed at them via the verified helper.
+# qBittorrent >= 5.1 reads these from [WebUI]; it migrates the legacy [Preferences] WebUI\* keys only once, so a key
+# written there after the first start is ignored.
 if [[ ${ENABLE_SSL,,} == 'yes' ]]; then
 	log_info "ENABLE_SSL is set to ${ENABLE_SSL}. The container will handle SSL."
-	if [ ! -e /config/qBittorrent/config/WebUICertificate.crt ]; then
-		log_warn "WebUI Certificate is missing, generating a new Certificate and Key"
-		openssl req -new -x509 -nodes -out /config/qBittorrent/config/WebUICertificate.crt -keyout /config/qBittorrent/config/WebUIKey.key -subj "/C=NL/ST=localhost/L=localhost/O=/OU=/CN="
-		chown -R "${PUID}":"${PGID}" /config/qBittorrent/config
-	elif [ ! -e /config/qBittorrent/config/WebUIKey.key ]; then
-		log_warn "WebUI Key is missing, generating a new Certificate and Key"
-		openssl req -new -x509 -nodes -out /config/qBittorrent/config/WebUICertificate.crt -keyout /config/qBittorrent/config/WebUIKey.key -subj "/C=NL/ST=localhost/L=localhost/O=/OU=/CN="
-		chown -R "${PUID}":"${PGID}" /config/qBittorrent/config
+	ssl_cert="/config/qBittorrent/config/WebUICertificate.crt"
+	ssl_key="/config/qBittorrent/config/WebUIKey.key"
+	if [[ ! -e "$ssl_cert" || ! -e "$ssl_key" ]]; then
+		log_warn "WebUI certificate or key is missing, generating a new self-signed certificate and key"
+		openssl req -new -x509 -nodes -out "$ssl_cert" -keyout "$ssl_key" -subj "/C=NL/ST=localhost/L=localhost/O=/OU=/CN="
+		chown "${PUID}":"${PGID}" "$ssl_cert" "$ssl_key"
 	fi
-	if grep -Fxq 'WebUI\HTTPS\CertificatePath=/config/qBittorrent/config/WebUICertificate.crt' "$qbt_config_path"; then
-		log_info "$qbt_config_path already has the line WebUICertificate.crt loaded, nothing to do."
-	else
-		log_warn "$qbt_config_path doesn't have the WebUICertificate.crt loaded. Added it to the config."
-		echo 'WebUI\HTTPS\CertificatePath=/config/qBittorrent/config/WebUICertificate.crt' >> "$qbt_config_path"
-	fi
-	if grep -Fxq 'WebUI\HTTPS\KeyPath=/config/qBittorrent/config/WebUIKey.key' "$qbt_config_path"; then
-		log_info "$qbt_config_path already has the line WebUIKey.key loaded, nothing to do."
-	else
-		log_warn "$qbt_config_path doesn't have the WebUIKey.key loaded. Added it to the config."
-		echo 'WebUI\HTTPS\KeyPath=/config/qBittorrent/config/WebUIKey.key' >> "$qbt_config_path"
-	fi
-	if grep -xq 'WebUI\\HTTPS\\Enabled=true\|WebUI\\HTTPS\\Enabled=false' "$qbt_config_path"; then
-		if grep -xq 'WebUI\\HTTPS\\Enabled=false' "$qbt_config_path"; then
-			log_warn "$qbt_config_path does have the WebUI\HTTPS\Enabled set to false, changing it to true."
-			sed -i 's/WebUI\\HTTPS\\Enabled=false/WebUI\\HTTPS\\Enabled=true/g' "$qbt_config_path"
-		else
-			log_info "$qbt_config_path does have the WebUI\HTTPS\Enabled already set to true."
-		fi
-	else
-		log_warn "$qbt_config_path doesn't have the WebUI\HTTPS\Enabled loaded. Added it to the config."
-		echo 'WebUI\HTTPS\Enabled=true' >> "$qbt_config_path"
-	fi
+	qbt_set_setting WebUI 'HTTPS\CertificatePath' "$ssl_cert"
+	qbt_set_setting WebUI 'HTTPS\KeyPath' "$ssl_key"
+	qbt_set_setting WebUI 'HTTPS\Enabled' true
 fi
 
 # Set the umask
