@@ -1,0 +1,107 @@
+name: Publish Docker image
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/m-archand/alpine-qbittorrentvpn
+  PLATFORMS: linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Get qBittorrent release
+        id: qbt
+        uses: ./.github/actions/get-qbt-release
+
+      - name: Build info
+        id: info
+        run: echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker
+        uses: ./.github/actions/docker-setup
+
+      - name: WireGuard integration E2E test
+        uses: ./.github/actions/test-wireguard-integration
+        with:
+          build_sha_short: ${{ steps.info.outputs.sha_short }}
+          qbt_release_tag: ${{ steps.qbt.outputs.release_tag }}
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    if: ${{ github.event_name != 'pull_request' }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Get qBittorrent release
+        id: qbt
+        uses: ./.github/actions/get-qbt-release
+
+      - name: Build info
+        id: info
+        run: echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker
+        uses: ./.github/actions/docker-setup
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:latest
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            SOURCE_COMMIT=${{ steps.info.outputs.sha_short }}
+            QBITTORRENT_TAG=${{ steps.qbt.outputs.release_tag }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      - name: Sign Docker image
+        uses: ./.github/actions/sign-docker-image
+        with:
+          digest: ${{ steps.build.outputs.digest }}
+          tags: ${{ env.IMAGE_NAME }}:latest
+
+      # Consumed by check-update.yml to detect new qBittorrent releases
+      - name: Store qBt version
+        env:
+          QBT_RELEASE_TAG: ${{ steps.qbt.outputs.release_tag }}
+        run: echo "$QBT_RELEASE_TAG" | tee qbt-release-info
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: qbt-release-info
+          path: qbt-release-info

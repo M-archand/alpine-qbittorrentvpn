@@ -1,0 +1,132 @@
+name: Publish Manual Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      qbt_tag:
+        description: 'qBittorrent release tag (userdocs/qbittorrent-nox-static). Empty = latest release'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/m-archand/alpine-qbittorrentvpn
+  PLATFORMS: linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
+concurrency:
+  group: manual-release
+  cancel-in-progress: false
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Get qBittorrent release
+        id: qbt
+        uses: ./.github/actions/get-qbt-release
+        with:
+          qbt_tag: ${{ inputs.qbt_tag }}
+
+      - name: Build info
+        id: info
+        run: echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker
+        uses: ./.github/actions/docker-setup
+
+      - name: WireGuard integration E2E test
+        uses: ./.github/actions/test-wireguard-integration
+        with:
+          build_sha_short: ${{ steps.info.outputs.sha_short }}
+          qbt_release_tag: ${{ steps.qbt.outputs.release_tag }}
+
+  build-and-push:
+    runs-on: ubuntu-latest
+    needs: [quality-gate]
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Determine next version
+        id: version
+        run: |
+          set -euo pipefail
+          latest="$(git tag --list "manual-v*" | sed 's/^manual-v//' | sort -V | tail -n 1)"
+          if [ -z "$latest" ]; then
+            next="1.0.0"
+          else
+            IFS='.' read -r major minor patch <<< "$latest"
+            patch=$((patch + 1))
+            next="${major}.${minor}.${patch}"
+          fi
+          echo "next_version=$next" >> "$GITHUB_OUTPUT"
+          echo "tag_name=manual-v$next" >> "$GITHUB_OUTPUT"
+
+      - name: Get qBittorrent release
+        id: qbt
+        uses: ./.github/actions/get-qbt-release
+        with:
+          qbt_tag: ${{ inputs.qbt_tag }}
+
+      - name: Build info
+        id: info
+        run: echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker
+        uses: ./.github/actions/docker-setup
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.next_version }}
+            ${{ env.IMAGE_NAME }}:stable
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            SOURCE_COMMIT=${{ steps.info.outputs.sha_short }}
+            QBITTORRENT_TAG=${{ steps.qbt.outputs.release_tag }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+
+      - name: Sign Docker image
+        uses: ./.github/actions/sign-docker-image
+        with:
+          digest: ${{ steps.build.outputs.digest }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.version.outputs.next_version }}
+            ${{ env.IMAGE_NAME }}:stable
+
+      - name: Tag repository with release version
+        env:
+          TAG_NAME: ${{ steps.version.outputs.tag_name }}
+          NEXT_VERSION: ${{ steps.version.outputs.next_version }}
+          QBT_RELEASE_TAG: ${{ steps.qbt.outputs.release_tag }}
+          SHA_SHORT: ${{ steps.info.outputs.sha_short }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG_NAME" -m "Release $NEXT_VERSION (qBittorrent $QBT_RELEASE_TAG, source $SHA_SHORT)"
+          git push origin "$TAG_NAME"
