@@ -62,8 +62,7 @@ qbt_set_setting() {
 	printf '%s\n' "$updated" > "$qbt_config_path"
 
 	if ! grep -Fxq "${name}=${value}" "$qbt_config_path"; then
-		log_error "Failed to set ${name}=${value} in ${qbt_config_path}"
-		stop_container
+		stop_container "Failed to set ${name}=${value} in ${qbt_config_path}"
 	fi
 }
 

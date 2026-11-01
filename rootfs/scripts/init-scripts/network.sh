@@ -13,14 +13,11 @@ fi
 
 ##########
 # Error handling
-# Any failing command below stops the container instead of leaving a half-configured network behind
+# Any failing command below parks the container (see stop_container in functions.sh) instead of leaving a
+# half-configured network behind. qBittorrent has not started at this point, so nothing can leak.
 
-# Log an error and stop the container. errexit is switched off first so stop_container always runs to completion
 fail() {
-	set +e
-	log_error "$1"
-	log_error "Network setup failed, stopping the container to prevent leaks"
-	stop_container
+	stop_container "Network setup failed: $1"
 }
 
 on_error() {

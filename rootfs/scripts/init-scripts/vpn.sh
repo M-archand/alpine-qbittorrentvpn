@@ -37,11 +37,10 @@ export VPN_CONFIG_NAME
 # If VPN config file not found in /config/openvpn or /config/wireguard then exit
 if [[ -z ${VPN_CONFIG} ]]; then
     if [[ ${VPN_TYPE} == "openvpn" ]]; then
-        log_error "No OpenVPN config file found in /config/openvpn/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.ovpn'"
+        stop_container "No OpenVPN config file found in /config/openvpn/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.ovpn'"
     else
-        log_error "No WireGuard config file found in /config/wireguard/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.conf'"
+        stop_container "No WireGuard config file found in /config/wireguard/. Please download one from your VPN provider and restart this container. Make sure the file extension is '.conf'"
     fi
-    stop_container
 fi
 
 ##########
@@ -69,8 +68,7 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
         log_info "Copying credentials from /config/openvpn/credentials.conf to /config/openvpn/${VPN_CONFIG_NAME}_credentials.conf"
         cp /config/openvpn/credentials.conf /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf
     else
-        log_error "No credentials set and didn't find a credential config file."
-        stop_container
+        stop_container "No credentials set and didn't find a credential config file."
     fi
 fi
 
@@ -90,7 +88,7 @@ fi
 if [[ -z "${vpn_remote_line}" ]]; then
     log_error "VPN configuration file ${VPN_CONFIG} does not contain 'remote' line:"
     cat "${VPN_CONFIG}"
-    stop_container
+    stop_container "VPN configuration file ${VPN_CONFIG} does not contain a 'remote' line"
 else
     log_debug "VPN remote line defined as '${vpn_remote_line}'"
 fi
@@ -104,8 +102,7 @@ fi
 if [[ -n "${VPN_REMOTE}" ]]; then
     log_info "VPN_REMOTE defined as '${VPN_REMOTE}'"
 else
-    log_error "VPN_REMOTE not found in ${VPN_CONFIG}"
-    stop_container
+    stop_container "VPN_REMOTE not found in ${VPN_CONFIG}"
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
@@ -117,8 +114,7 @@ fi
 if [[ -n "${VPN_PORT}" ]]; then
     log_info "VPN_PORT defined as '${VPN_PORT}'"
 else
-    log_error "VPN_PORT not found in ${VPN_CONFIG}"
-    stop_container
+    stop_container "VPN_PORT not found in ${VPN_CONFIG}"
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
@@ -148,8 +144,7 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
     VPN_DEVICE_TYPE=$( grep -o -m 1 -P '(?<=^dev\s)[^\s]+' < "${VPN_CONFIG}")
 
     if [[ -z "${VPN_DEVICE_TYPE}" ]]; then
-        log_error "VPN_DEVICE_TYPE not found in ${VPN_CONFIG}"
-        stop_container
+        stop_container "VPN_DEVICE_TYPE not found in ${VPN_CONFIG}"
     fi
 
     # If device name has no number, append 0
@@ -191,7 +186,12 @@ if [[ "$DEBUG" == "yes" ]]; then
     test_connection
 fi
 
-# Exit if any of the following commands fails
+# A failing command while the tunnel comes up parks the container (same contract as every other fatal error, see
+# stop_container in functions.sh). qBittorrent has not started at this point, so nothing can leak.
+on_error() {
+    stop_container "vpn.sh failed at line $1 (exit code $?): $2"
+}
+trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
 set -e
 
 if [[ $VPN_ENABLED != "no" ]]; then
@@ -255,8 +255,7 @@ if [[ $VPN_ENABLED != "no" ]]; then
             # Process exited
             if ! kill -0 "$openvpn_pid" 2>/dev/null; then
                 echo "--------------------"
-                log_error "Failed to start OpenVPN"
-                exit 1
+                stop_container "Failed to start OpenVPN"
             # Startup was successfull
             elif [[ -f /tmp/openvpn_startup_finished ]]; then
                 break
@@ -274,6 +273,7 @@ if [[ $VPN_ENABLED != "no" ]]; then
 fi
 
 set +e
+trap - ERR
 
 if [[ "$DEBUG" == "yes" ]]; then
     test_connection

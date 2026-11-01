@@ -4,6 +4,11 @@
 source /scripts/helper/functions.sh
 
 ##########
+# Fresh boot: drop the marker a previous run's stop_container() may have left (it survives 'docker restart')
+
+rm -f "${STOP_MARKER}"
+
+##########
 # Build info
 
 echo "Image build from commit $(cat /etc/image-source-commit) on $(cat /etc/image-build-date)"
@@ -17,8 +22,7 @@ check_network=$(ip -o link show docker0 2>/dev/null || true)
 
 # If network interface docker0 is present then we are running in host mode and thus must exit
 if [[ -n "${check_network}" ]]; then
-	log_error "Network type detected as 'Host', this will cause major issues, please stop the container and switch back to 'Bridge' mode"
-	stop_container
+	stop_container "Network type detected as 'Host', this will cause major issues, please stop the container and switch back to 'Bridge' mode"
 fi
 
 ##########
@@ -132,8 +136,7 @@ if \
 	# Try to enable src_valid_mark
 	! (sysctl -q net.ipv4.conf.$DOCKER_INTERFACE.src_valid_mark=1 >/dev/null 2>&1)
 then
-	log_error "rp_filter is set to 1 (strict) and src_valid_mark is set to 0 and could not be enabled"
-	stop_container
+	stop_container "rp_filter is set to 1 (strict) and src_valid_mark is set to 0 and could not be enabled"
 fi
 
 ##########
@@ -153,8 +156,7 @@ else
 fi
 
 if [[ ! "${PUID}" =~ ^[0-9]+$ ]] || [[ ! "${PGID}" =~ ^[0-9]+$ ]]; then
-	log_error "PUID and PGID must be numeric IDs, got PUID='${PUID}' PGID='${PGID}'"
-	stop_container
+	stop_container "PUID and PGID must be numeric IDs, got PUID='${PUID}' PGID='${PGID}'"
 fi
 
 # qBittorrent runs as the numeric PUID:PGID (see service-scripts/qbittorrent.sh). The 'qbittorrent' account only gives

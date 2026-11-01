@@ -71,6 +71,16 @@ WARNING: Only with the `latest` tag will you continuously receive updates.
 |----------|----------|----------|----------|----------|
 | `8080` | TCP | Yes | qBittorrent WebUI | `8080:8080`|
 
+## Health check
+The image ships a Docker `HEALTHCHECK`. The container is `healthy` while qBittorrent is running and `unhealthy` when it is not: after a failed start (no VPN config, invalid `PUID`/`PGID`, host network mode, firewall setup failure, ...) and after the kill switch tripped. In both cases the container is parked on purpose: qBittorrent is stopped so nothing can leak, and the container keeps running so a restart policy does not loop it. Get the reason with:
+
+```sh
+docker inspect --format '{{json .State.Health}}' qbittorrent
+docker logs qbittorrent
+```
+
+Fix the cause and restart the container. Tools that act on the health status (`autoheal`, Compose `depends_on` with `condition: service_healthy`) work out of the box. Override the timing with a `healthcheck:` block in your compose file if needed.
+
 ## VPN Configuration
 If there are multiple config files present, one will be choosen randomly.
 

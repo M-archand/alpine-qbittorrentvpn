@@ -15,8 +15,7 @@ while :; do
 	# The kill switch is down if its nftables rules are gone or if the internet can be
 	# reached over the docker interface (bypassing the VPN).
 	if ! firewall_rules_intact || firewall_bypassed; then
-		log_error "Firewall is down! Killing qBittorrent!"
-		stop_container
+		stop_container "Firewall is down! Killing qBittorrent!"
 	fi
 
 	sleep "${FIREWALL_CHECK_INTERVAL}"

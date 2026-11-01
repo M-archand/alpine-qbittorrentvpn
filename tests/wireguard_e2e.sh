@@ -48,6 +48,22 @@ while ! curl -s "http://127.0.0.1:8080/api/v2/app/version" > /dev/null; do
     fi
 done
 
+echo "Waiting for the container to report healthy..."
+MAX_H_WAIT=60
+H_WAIT=0
+while [ "$(docker inspect --format '{{.State.Health.Status}}' qbittorrentvpn)" != "healthy" ]; do
+    sleep 2
+    ((H_WAIT+=2))
+    if [ $H_WAIT -gt $MAX_H_WAIT ]; then
+        echo "Timeout waiting for the container to become healthy"
+        docker inspect --format '{{json .State.Health}}' qbittorrentvpn
+        docker logs qbittorrentvpn
+        cleanup
+        exit 1
+    fi
+done
+echo "Container is healthy"
+
 echo "Authenticating..."
 COOKIE=$(curl -i --header "Referer: http://127.0.0.1:8080" --data "username=admin&password=adminadmin" http://127.0.0.1:8080/api/v2/auth/login | grep "set-cookie" | awk '{print $2}')
 if [ -z "$COOKIE" ]; then
@@ -124,6 +140,33 @@ if [ "$SUCCESS" != "true" ]; then
     cleanup
     exit 1
 fi
+
+echo "Tripping the kill switch (deleting the nftables table)..."
+docker exec qbittorrentvpn nft delete table inet qbt-firewall
+
+# firewall-check must call stop_container: qBittorrent gone, container still up, health unhealthy with the reason
+MAX_T_WAIT=90
+T_WAIT=0
+while [ "$(docker inspect --format '{{.State.Health.Status}}' qbittorrentvpn)" != "unhealthy" ]; do
+    sleep 2
+    ((T_WAIT+=2))
+    if [ $T_WAIT -gt $MAX_T_WAIT ]; then
+        echo "Timeout waiting for the container to become unhealthy after the kill-switch trip"
+        docker inspect --format '{{json .State.Health}}' qbittorrentvpn
+        docker logs qbittorrentvpn
+        cleanup
+        exit 1
+    fi
+done
+HEALTH_OUTPUT=$(docker inspect --format '{{range .State.Health.Log}}{{println .Output}}{{end}}' qbittorrentvpn | grep . | tail -n 1)
+if [ "$(docker inspect --format '{{.State.Status}}' qbittorrentvpn)" != "running" ] || docker exec qbittorrentvpn pidof qbittorrent-nox > /dev/null 2>&1 || ! echo "$HEALTH_OUTPUT" | grep -q "Firewall is down"; then
+    echo "Expected a running container without qbittorrent-nox and a health output naming the trip, got: ${HEALTH_OUTPUT}"
+    docker inspect --format '{{json .State}}' qbittorrentvpn
+    docker logs qbittorrentvpn
+    cleanup
+    exit 1
+fi
+echo "Kill-switch trip parked the container: unhealthy, qBittorrent stopped, reason: ${HEALTH_OUTPUT}"
 
 echo "Test completed successfully"
 cleanup

@@ -119,8 +119,26 @@ firewall_bypassed() {
     return "$bypassed"
 }
 
+##########
+# Fatal errors
+# One contract for every fatal condition, failed init and tripped kill switch alike: the container is parked, never
+# exited. qBittorrent is stopped, the reason is written to STOP_MARKER and the caller sleeps forever. The container
+# stays "running" so no restart policy loops it back into the same failure (or through the leak window again), and
+# the Docker HEALTHCHECK (/scripts/helper/healthcheck.sh) reports it unhealthy while the marker exists.
+# init-environment removes the marker, so a restart gives a clean slate.
+
+STOP_MARKER="/run/qbt-stopped"
+
+# Usage: stop_container [reason]
 stop_container() {
-    # Kill-switch trip: stop fast and stay down (no restart) to prevent leaks.
+    # Off so a caller running under errexit (network.sh, the tunnel start in vpn.sh) cannot bail out halfway through
+    set +e
+    local reason="${*:-see the container log}"
+    log_error "${reason}"
+    log_error "Container parked: qBittorrent is stopped and the health check reports unhealthy until the container is restarted"
+    # Written first: called from a longrun, the s6-svc on the caller's own service below may kill this shell
+    printf '%s\n' "${reason}" > "${STOP_MARKER}"
+
     s6-svc -k -d /run/service/service-qbittorrent/ >/dev/null 2>&1
     s6-svc -k -d /run/service/service-firewall-check/ >/dev/null 2>&1
     s6-svc -k -d /run/service/service-connectivity-check/ >/dev/null 2>&1
