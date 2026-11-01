@@ -44,14 +44,26 @@ if [[ -z ${VPN_CONFIG} ]]; then
 fi
 
 ##########
+# Working copy
+# The user's file is never modified: it may be read-only or a single-file bind mount, and every edit to it would be
+# permanent. Everything below reads and edits a private copy under /run; the basename is kept because wg-quick derives
+# the interface name from it. Relative paths inside an .ovpn still resolve, OpenVPN is started from /config/openvpn.
+
+VPN_CONFIG_SOURCE="${VPN_CONFIG}"
+VPN_CONFIG="/run/${VPN_TYPE}/${VPN_CONFIG_BASENAME}"
+if ! (umask 077 && mkdir -p "/run/${VPN_TYPE}" && cp "${VPN_CONFIG_SOURCE}" "${VPN_CONFIG}"); then
+    fail_init "Could not copy ${VPN_CONFIG_SOURCE} to ${VPN_CONFIG}"
+fi
+
+# Convert CRLF (windows) to LF (unix)
+dos2unix -q "${VPN_CONFIG}"
+
+##########
 # OpenVPN credentials
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
-    # Remove auth-user-pass line(s) so credentials come only from the file/CLI,
-    # never an interactive prompt. Rewrite in place (not `sed -i`, whose rename
-    # fails with EBUSY when the config is a bind-mounted file).
-    vpn_config_stripped="$(sed -E 's/auth-user-pass.*//g' "${VPN_CONFIG}")"
-    printf '%s\n' "${vpn_config_stripped}" > "${VPN_CONFIG}"
+    # Remove auth-user-pass line(s) so credentials come only from the file/CLI, never an interactive prompt
+    sed -i -E '/^[[:space:]]*auth-user-pass([[:space:]]|$)/d' "${VPN_CONFIG}"
     # Use credentials from credentials file if it exists
     if [[ -f /config/openvpn/"${VPN_CONFIG_NAME}"_credentials.conf ]]; then
         log_info "Using credentials from /config/openvpn/${VPN_CONFIG_NAME}_credentials.conf"
@@ -75,9 +87,6 @@ fi
 ##########
 # Read VPN config
 
-# Convert CRLF (windows) to LF (unix)
-dos2unix -q "${VPN_CONFIG}"
-
 # Parse values from the ovpn or conf file
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
     export vpn_remote_line=$( (grep -o -m 1 -P '(?<=^remote\s)[^\n\r]+' | sed -e 's~^[ \t]*~~;s~[ \t]*$~~') < "${VPN_CONFIG}")
@@ -86,9 +95,9 @@ else
 fi
 
 if [[ -z "${vpn_remote_line}" ]]; then
-    log_error "VPN configuration file ${VPN_CONFIG} does not contain 'remote' line:"
+    log_error "VPN configuration file ${VPN_CONFIG_SOURCE} does not contain 'remote' line:"
     cat "${VPN_CONFIG}"
-    fail_init "VPN configuration file ${VPN_CONFIG} does not contain a 'remote' line"
+    fail_init "VPN configuration file ${VPN_CONFIG_SOURCE} does not contain a 'remote' line"
 else
     log_debug "VPN remote line defined as '${vpn_remote_line}'"
 fi
@@ -102,7 +111,7 @@ fi
 if [[ -n "${VPN_REMOTE}" ]]; then
     log_info "VPN_REMOTE defined as '${VPN_REMOTE}'"
 else
-    fail_init "VPN_REMOTE not found in ${VPN_CONFIG}"
+    fail_init "VPN_REMOTE not found in ${VPN_CONFIG_SOURCE}"
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
@@ -114,7 +123,7 @@ fi
 if [[ -n "${VPN_PORT}" ]]; then
     log_info "VPN_PORT defined as '${VPN_PORT}'"
 else
-    fail_init "VPN_PORT not found in ${VPN_CONFIG}"
+    fail_init "VPN_PORT not found in ${VPN_CONFIG_SOURCE}"
 fi
 
 if [[ "${VPN_TYPE}" == "openvpn" ]]; then
@@ -126,7 +135,7 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
         if [[ -n "${VPN_PROTOCOL}" ]]; then
             log_info "VPN_PROTOCOL defined as '${VPN_PROTOCOL}'"
         else
-            log_warn "VPN_PROTOCOL not found in ${VPN_CONFIG}, assuming udp"
+            log_warn "VPN_PROTOCOL not found in ${VPN_CONFIG_SOURCE}, assuming udp"
             export VPN_PROTOCOL="udp"
         fi
     fi
@@ -144,7 +153,7 @@ if [[ "${VPN_TYPE}" == "openvpn" ]]; then
     VPN_DEVICE_TYPE=$( grep -o -m 1 -P '(?<=^dev\s)[^\s]+' < "${VPN_CONFIG}")
 
     if [[ -z "${VPN_DEVICE_TYPE}" ]]; then
-        fail_init "VPN_DEVICE_TYPE not found in ${VPN_CONFIG}"
+        fail_init "VPN_DEVICE_TYPE not found in ${VPN_CONFIG_SOURCE}"
     fi
 
     # If device name has no number, append 0
@@ -210,7 +219,7 @@ if [[ $VPN_ENABLED != "no" ]]; then
         # Delete if file persisted between reboots
         if [ -f /tmp/openvpn_startup_finished ]; then rm /tmp/openvpn_startup_finished; fi
 
-        # Allow to specify relative positions for additional files (like ca, cert, key, ...)
+        # Relative paths in the .ovpn (ca, cert, key, ...) resolve against the user's directory, not the copy's
         pushd /config/openvpn/ > /dev/null
 
         # Build the OpenVPN command line

@@ -83,6 +83,7 @@ Fix the cause and restart the container. Tools that act on the health status (`a
 
 ## VPN Configuration
 If there are multiple config files present, one will be choosen randomly.
+The chosen file is not modified: the container works on a copy under `/run`, so the config can be mounted read-only.
 
 ## WireGuard 
 The container will fail to boot if `VPN_ENABLED` is set and there is no valid `INTERFACE.conf` file present in the `/config/wireguard` directory. Drop a `.conf` file from your VPN provider into `/config/wireguard` and start the container again.

@@ -30,6 +30,9 @@ if ! docker exec wireguard sh -c "test -f /config/peer1/peer1.conf"; then
     exit 1
 fi
 
+# The container must not touch the mounted config (it works on a copy under /run)
+WG_CONF_SUM_BEFORE=$(docker exec wireguard md5sum /config/peer1/peer1.conf)
+
 echo "Starting qbittorrentvpn..."
 docker compose -f tests/docker-compose-wg-e2e.yml up -d qbittorrentvpn
 
@@ -63,6 +66,16 @@ while [ "$(docker inspect --format '{{.State.Health.Status}}' qbittorrentvpn)" !
     fi
 done
 echo "Container is healthy"
+
+echo "Checking that the mounted WireGuard config was left untouched..."
+WG_CONF_SUM_AFTER=$(docker exec wireguard md5sum /config/peer1/peer1.conf)
+if [ "$WG_CONF_SUM_BEFORE" != "$WG_CONF_SUM_AFTER" ] || ! docker exec qbittorrentvpn test -f /run/wireguard/wg0.conf; then
+    echo "Mounted config changed (${WG_CONF_SUM_BEFORE} -> ${WG_CONF_SUM_AFTER}) or working copy /run/wireguard/wg0.conf missing"
+    docker logs qbittorrentvpn
+    cleanup
+    exit 1
+fi
+echo "Mounted config unchanged, working copy present"
 
 echo "Authenticating..."
 COOKIE=$(curl -i --header "Referer: http://127.0.0.1:8080" --data "username=admin&password=adminadmin" http://127.0.0.1:8080/api/v2/auth/login | grep "set-cookie" | awk '{print $2}')
