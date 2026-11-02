@@ -132,8 +132,8 @@ id <username>
 
 The container natively supports s6-rc extensibility. If you want to run a custom init script or you want to run long-lived background daemons, you can provide native `s6-rc` service directories! 
 
-* **`/custom-init`**: Any valid `s6-rc` component directory placed here will be added to the `init` bundle automatically. This is ideal for run-once setup scripts (like firewall rules or fetching configurations).
-* **`/custom-services`**: Any valid `s6-rc` component directory placed here will be added to the `user` bundle automatically (run alongside qBittorrent). This is ideal for background applications (like a custom application or a VPN port forwarding daemon).
+* **`/custom-init`**: Any valid `s6-rc` component directory placed here will be added to the `init` bundle automatically. This is ideal for run-once setup scripts (like firewall rules or fetching configurations). A component that depends only on `base` runs before the VPN and the kill switch exist; make it depend on `init-network` if it must run behind them.
+* **`/custom-services`**: Any valid `s6-rc` component directory placed here will be added to the `user` bundle automatically (run alongside qBittorrent). This is ideal for background applications (like a custom application or a VPN port forwarding daemon). Every component here is made to depend on `init`, so it starts only once the tunnel is up and the kill switch is loaded, whatever its own `dependencies.d` says.
 
 For an example of the structure these folders must have, see [docs/examples/s6-rc](docs/examples/s6-rc).
 

@@ -4,6 +4,8 @@
 # Merges the s6-rc components mounted at /custom-init and /custom-services into the tree as custom-<name> and adds
 # them to the init / user bundle. Any problem parks the container (fail_init in functions.sh) naming the component,
 # instead of leaving a half-copied component for s6-rc-compile to reject with a generic error.
+# Every /custom-services component gets a dependency on the init bundle: the kill switch only exists once init-network
+# has run, and a service that started earlier would send its traffic over the docker interface unprotected.
 
 set -euo pipefail
 
@@ -19,8 +21,9 @@ on_error() {
 }
 trap 'on_error "$LINENO" "$BASH_COMMAND"' ERR
 
+# Usage: process_components <source dir> <bundle> <required dependency or "">
 process_components() {
-    local source_dir=$1 bundle=$2 component original_name name target type file
+    local source_dir=$1 bundle=$2 required_dependency=$3 component original_name name target type file
 
     if [[ ! -d "${source_dir}" ]]; then
         return 0
@@ -72,11 +75,18 @@ process_components() {
             chmod +x "${target}/up"
         fi
 
+        # Bundles cannot have dependencies, their contents get theirs when they are processed themselves
+        if [[ -n "${required_dependency}" && "${type}" != "bundle" && ! -f "${target}/dependencies.d/${required_dependency}" ]]; then
+            log_info "[custom-s6] ${name} now depends on ${required_dependency}: it starts once the kill switch and the tunnel are up"
+            mkdir -p "${target}/dependencies.d"
+            touch "${target}/dependencies.d/${required_dependency}"
+        fi
+
         mkdir -p "${S6_RC_DIR}/${bundle}/contents.d"
         touch "${S6_RC_DIR}/${bundle}/contents.d/${name}"
         log_info "[custom-s6] ${name} added to the ${bundle} bundle"
     done
 }
 
-process_components "${CUSTOM_INIT_DIR}" "init"
-process_components "${CUSTOM_SERVICES_DIR}" "user"
+process_components "${CUSTOM_INIT_DIR}" "init" ""
+process_components "${CUSTOM_SERVICES_DIR}" "user" "init"
