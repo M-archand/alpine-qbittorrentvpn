@@ -137,6 +137,24 @@ else
 		fi
 	done
 
+	# Containers on this host and the host itself connect through docker-proxy, so they arrive from the docker gateway
+	# address rather than from their own network (see README "WebUI access from other containers"). Allowed by default,
+	# WEBUI_ALLOW_DOCKER_GATEWAY=no restricts the WebUI to the listed networks only.
+	if [[ "${WEBUI_ALLOW_DOCKER_GATEWAY:-yes}" != "no" ]]; then
+		gateway_addresses=()
+		if [[ -n "${DEFAULT_IPV4_GATEWAY:-}" ]]; then
+			webui_allowed_ipv4+=("${DEFAULT_IPV4_GATEWAY}/32")
+			gateway_addresses+=("${DEFAULT_IPV4_GATEWAY}")
+		fi
+		if [[ -n "${DEFAULT_IPV6_GATEWAY:-}" ]]; then
+			webui_allowed_ipv6+=("${DEFAULT_IPV6_GATEWAY}/128")
+			gateway_addresses+=("${DEFAULT_IPV6_GATEWAY}")
+		fi
+		log_info "Docker gateway ${gateway_addresses[*]} added to the WebUI allow list: the host and its other containers connect from it (WEBUI_ALLOW_DOCKER_GATEWAY=no to disable)"
+	else
+		log_info "WEBUI_ALLOW_DOCKER_GATEWAY=no: only WEBUI_ALLOWED_NETWORKS may reach the WebUI, containers on this host included"
+	fi
+
 	input_rules+=("tcp dport ${webui_port} ip saddr @webui_allowed_networks_ipv4 counter accept comment \"Accept input to the qBt WebUI (IPv4)\"")
 	input_rules+=("tcp dport ${webui_port} ip6 saddr @webui_allowed_networks_ipv6 counter accept comment \"Accept input to the qBt WebUI (IPv6)\"")
 fi
@@ -153,6 +171,11 @@ nft_set() {
 	echo "		type ${type}"
 	if [[ -n "${flags}" ]]; then
 		echo "		flags ${flags}"
+	fi
+	# Overlapping intervals (192.168.0.0/16 next to 192.168.1.0/24, or the docker gateway inside a listed network) are
+	# an error without auto-merge: "conflicting intervals specified"
+	if [[ "${flags}" == *interval* ]]; then
+		echo "		auto-merge"
 	fi
 	if [[ $# -gt 0 ]]; then
 		printf -v elements '%s, ' "$@"

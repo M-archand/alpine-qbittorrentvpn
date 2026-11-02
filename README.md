@@ -59,7 +59,8 @@ Images are published to the GitHub Container Registry as `ghcr.io/m-archand/alpi
 |`VPN_PASSWORD`| If username and password provided, configures all ovpn files automatically |`ac98df79ed7fb`||
 |`VPN_TYPE`| WireGuard or OpenVPN (wireguard/openvpn)?|`openvpn`|`wireguard`|
 |`VPN_USERNAME`| If username and password provided, configures all ovpn files automatically |`ad8f64c02a2de`||
-|`WEBUI_ALLOWED_NETWORKS`| Comma delimited networks in CIDR notation. If set, only networks in this list can access the WebUI. |`192.168.0.0/16,fd5e:d5b:760a:4796::/64`||
+|`WEBUI_ALLOWED_NETWORKS`| Comma delimited networks in CIDR notation. If set, only networks in this list (plus the docker gateway, see below) can access the WebUI. |`192.168.0.0/16,fd5e:d5b:760a:4796::/64`||
+|`WEBUI_ALLOW_DOCKER_GATEWAY`| Also allow the docker gateway address when `WEBUI_ALLOWED_NETWORKS` is set, so the host and other containers on it (Sonarr, Radarr, a reverse proxy, ...) can reach the WebUI. Set to `no` to allow the listed networks only. See [WebUI access from other containers](#webui-access-from-other-containers). |`no`|`yes`|
 |`WEBUI_PASSWORD`| Set WebUI password if none is set (won't change it) |`mypassword`||
 
 ## Volumes
@@ -72,6 +73,17 @@ Images are published to the GitHub Container Registry as `ghcr.io/m-archand/alpi
 | Port | Proto | Required | Function | Example |
 |----------|----------|----------|----------|----------|
 | `8080` | TCP | Yes | qBittorrent WebUI | `8080:8080`|
+
+## WebUI access from other containers
+Other containers on the same host (Sonarr, Radarr, Prowlarr, a reverse proxy, ...) reach qBittorrent through the port you publish on the host, for example `http://192.168.1.10:8080`. Docker does not forward that traffic into the container directly: it ends at `docker-proxy` on the host, which opens its own connection to qBittorrent from the gateway address of the container's network (`172.17.0.1` on the default bridge, `172.18.0.1` or similar on a compose network). qBittorrent and the firewall therefore see the gateway address, not the address of the calling container or of its network. Browsers on your LAN keep their real address. The same applies to `curl http://localhost:8080` run on the host.
+
+Without `WEBUI_ALLOWED_NETWORKS` nothing changes: the WebUI accepts every source and qBittorrent's login protects it. With `WEBUI_ALLOWED_NETWORKS` set, the firewall drops every other source, and a list such as `192.168.1.0/24` would silently cut off every container on the host. The container therefore adds its docker gateway address to the allow list automatically (`WEBUI_ALLOW_DOCKER_GATEWAY=yes`, the default). The startup log shows the address it added.
+
+What that opens: the host itself and every container running on it can reach the WebUI login page and API. qBittorrent's username/password or API key still applies. Everything outside the listed networks stays blocked. Set `WEBUI_ALLOW_DOCKER_GATEWAY=no` if you want the WebUI reachable from the listed networks only, for example when the host also runs containers you do not trust and nothing on the host needs the qBittorrent API. In that mode Sonarr and friends on the same host cannot connect unless you add the gateway address (`172.17.0.1/32`) to `WEBUI_ALLOWED_NETWORKS` yourself.
+
+Do not put the gateway address into qBittorrent's "Bypass authentication for clients in whitelisted IP subnets": every container on the host would then skip the login. Use an API key or credentials in Sonarr/Radarr instead.
+
+If the Docker daemon runs with `"userland-proxy": false`, there is no `docker-proxy`: containers on the same network as qBittorrent connect with their own address (add that network to `WEBUI_ALLOWED_NETWORKS`), and containers on other networks cannot reach a published port through the host at all in that mode.
 
 ## Health check
 The image ships a Docker `HEALTHCHECK`. The container is `healthy` while qBittorrent is running and `unhealthy` when it is not: after a failed start (no VPN config, invalid `PUID`/`PGID`, host network mode, firewall setup failure, ...) and after the kill switch tripped. In both cases the container is parked on purpose: qBittorrent is stopped so nothing can leak, and the container keeps running so a restart policy does not loop it. Get the reason with:

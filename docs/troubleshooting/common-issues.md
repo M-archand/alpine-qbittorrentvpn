@@ -31,6 +31,17 @@ The firewall is set up with nftables only. Hosts whose kernel lacks `nf_tables` 
 `Error: Could not process rule: Invalid argument` [(Issue)](https://github.com/Trigus42/alpine-qbittorrentvpn/issues/50)  
 `netlink: Error: cache initialization failed: Invalid argument` [(Issue)](https://github.com/Trigus42/alpine-qbittorrentvpn/issues/52)  
 
+## Sonarr, Radarr or other containers cannot reach the WebUI
+
+Symptoms: the *arr client reports "Unable to communicate with qBittorrent" or "Failed to connect", the WebUI works from a browser on the LAN, and the qBittorrent log shows no request from the client at all. From the client container, `curl -s -m 5 -o /dev/null -w '%{http_code}\n' http://<host-ip>:8080/api/v2/app/version` prints `000` (timeout) instead of `403`.
+
+Cause: `WEBUI_ALLOWED_NETWORKS` is set and does not cover the docker gateway address the client arrives from (see [WebUI access from other containers](../../README.md#webui-access-from-other-containers)), either because `WEBUI_ALLOW_DOCKER_GATEWAY=no` is set or because the image predates that variable. Listing the client's own network (for example `172.24.0.0/16`) does not help, the traffic never carries that source address.
+
+Fix: remove `WEBUI_ALLOW_DOCKER_GATEWAY=no` or update the image, or add the gateway address to `WEBUI_ALLOWED_NETWORKS` by hand. Check what is currently allowed with:
+```sh
+docker exec qbittorrent nft list set inet qbt-firewall webui_allowed_networks_ipv4
+```
+
 ## Wrong date due to outdated seccomp
 ```sh
 / # date

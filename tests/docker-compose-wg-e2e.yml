@@ -33,6 +33,7 @@ services:
       - PUID=99
       - PGID=100
       - WEBUI_PASSWORD=adminadmin
+      - WEBUI_ALLOWED_NETWORKS=192.0.2.0/24
     ports:
       - 8080:8080
     volumes:

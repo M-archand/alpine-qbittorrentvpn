@@ -33,10 +33,30 @@ if [[ -n "${LEGACY_IPTABLES}" ]]; then
 fi
 
 ##########
-# WEBUI_ALLOWED_NETWORKS
+# WEBUI_ALLOWED_NETWORKS / WEBUI_ALLOW_DOCKER_GATEWAY
 
 if [[ -n "${WEBUI_ALLOWED_NETWORKS}" ]]; then
-    log_info "WEBUI_ALLOWED_NETWORKS is defined as $WEBUI_ALLOWED_NETWORKS"
+	log_info "WEBUI_ALLOWED_NETWORKS is defined as $WEBUI_ALLOWED_NETWORKS"
+fi
+
+# Other containers on this host (and the host itself) reach the published WebUI port through docker-proxy, so their
+# connections arrive from the docker gateway address, never from their own network. With 'yes' (default) network.sh adds
+# that address to the WebUI allow list whenever WEBUI_ALLOWED_NETWORKS is set; 'no' keeps the list exactly as given.
+WEBUI_ALLOW_DOCKER_GATEWAY="$(echo "${WEBUI_ALLOW_DOCKER_GATEWAY,,}" | sed -e 's~^[ \t]*~~;s~[ \t]*$~~')"
+case "${WEBUI_ALLOW_DOCKER_GATEWAY}" in
+	"")
+		WEBUI_ALLOW_DOCKER_GATEWAY="yes"
+		;;
+	yes|no)
+		log_info "WEBUI_ALLOW_DOCKER_GATEWAY defined as '${WEBUI_ALLOW_DOCKER_GATEWAY}'"
+		;;
+	*)
+		log_warn "WEBUI_ALLOW_DOCKER_GATEWAY must be 'yes' or 'no', got '${WEBUI_ALLOW_DOCKER_GATEWAY}'. Defaulting to 'yes'"
+		WEBUI_ALLOW_DOCKER_GATEWAY="yes"
+		;;
+esac
+if [[ "${WEBUI_ALLOW_DOCKER_GATEWAY}" == "no" && -z "${WEBUI_ALLOWED_NETWORKS}" ]]; then
+	log_info "WEBUI_ALLOW_DOCKER_GATEWAY=no has no effect while WEBUI_ALLOWED_NETWORKS is unset (the WebUI accepts every source)"
 fi
 
 #########
@@ -218,6 +238,7 @@ export_contenv \
 	PUID \
 	PGID \
 	VPN_TYPE \
+	WEBUI_ALLOW_DOCKER_GATEWAY \
 	FIREWALL_CHECK_HOST \
 	FIREWALL_CHECK_INTERVAL \
 	HEALTH_CHECK_HOST \
