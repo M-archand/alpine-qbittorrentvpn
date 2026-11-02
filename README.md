@@ -85,6 +85,11 @@ Do not put the gateway address into qBittorrent's "Bypass authentication for cli
 
 If the Docker daemon runs with `"userland-proxy": false`, there is no `docker-proxy`: containers on the same network as qBittorrent connect with their own address (add that network to `WEBUI_ALLOWED_NETWORKS`), and containers on other networks cannot reach a published port through the host at all in that mode.
 
+## Host header validation (DNS rebinding)
+qBittorrent's "Enable Host header validation" (Options, Web UI, Security) is left on, as in qBittorrent itself. On its own it blocks nothing: the default "Server domains" value `*` accepts every `Host` header. To stop a malicious web page from reaching the WebUI through DNS rebinding, put the names and addresses you use in the browser into "Server domains", separated by `;` and without spaces, for example `qbt.home.lan;192.168.1.10`. Requests that carry another `Host` header are answered with `401 Unauthorized`, so a reverse proxy in front of the WebUI must send one of the listed names (for nginx: `proxy_set_header Host $host;` and list the public name). `WEBUI_ALLOWED_NETWORKS` is a different layer: it filters by source address, Host header validation by the name the browser asked for.
+
+Installs created by older versions of this image have `HostHeaderValidation=false` in `/config/qBittorrent/config/qBittorrent.conf`; the setting is kept across updates, switch it on in Options, Web UI, Security.
+
 ## Health check
 The image ships a Docker `HEALTHCHECK`. The container is `healthy` while qBittorrent is running and `unhealthy` when it is not: after a failed start (no VPN config, invalid `PUID`/`PGID`, host network mode, firewall setup failure, ...) and after the kill switch tripped. In both cases the container is parked on purpose: qBittorrent is stopped so nothing can leak, and the container keeps running so a restart policy does not loop it. Get the reason with:
 

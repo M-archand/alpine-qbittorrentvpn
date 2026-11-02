@@ -84,8 +84,19 @@ if [ -z "$COOKIE" ]; then
     exit 1
 fi
 
+PREFS=$(curl -s -H "Cookie: ${COOKIE}" http://127.0.0.1:8080/api/v2/app/preferences)
+
+echo "Checking that Host header validation is on (shipped template)..."
+if ! grep -q '"web_ui_host_header_validation_enabled":true' <<< "$PREFS"; then
+    echo "qBittorrent reports Host header validation off: $(grep -o '"web_ui_host_header_validation_enabled":[a-z]*' <<< "$PREFS")"
+    docker exec qbittorrentvpn grep -n 'HostHeaderValidation' /config/qBittorrent/config/qBittorrent.conf || true
+    cleanup
+    exit 1
+fi
+echo "Host header validation is on"
+
 echo "Checking that qBittorrent is bound to the VPN interface..."
-BOUND_IFACE=$(curl -s -H "Cookie: ${COOKIE}" http://127.0.0.1:8080/api/v2/app/preferences | grep -o '"current_network_interface":"[^"]*"' | cut -d'"' -f4)
+BOUND_IFACE=$(grep -o '"current_network_interface":"[^"]*"' <<< "$PREFS" | cut -d'"' -f4)
 if [ "$BOUND_IFACE" != "wg0" ] || ! docker exec qbittorrentvpn grep -Fxq 'Session\Interface=wg0' /config/qBittorrent/config/qBittorrent.conf; then
     echo "qBittorrent is not bound to wg0 (API reports '${BOUND_IFACE}')"
     docker exec qbittorrentvpn grep -n 'Interface' /config/qBittorrent/config/qBittorrent.conf || true

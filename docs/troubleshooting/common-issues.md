@@ -42,6 +42,14 @@ Fix: remove `WEBUI_ALLOW_DOCKER_GATEWAY=no` or update the image, or add the gate
 docker exec qbittorrent nft list set inet qbt-firewall webui_allowed_networks_ipv4
 ```
 
+## WebUI answers 401 Unauthorized
+
+Symptoms: every request, including the login page, gets `401 Unauthorized`. From a browser on the LAN or through a reverse proxy, while `curl http://127.0.0.1:8080` inside the container works.
+
+Cause: Host header validation is on (the image's default) and "Server domains" lists names, but not the one the browser or the proxy sends in the `Host` header. qBittorrent only accepts the listed names and the address the connection arrived on; through Docker's port publishing that address is the container's, not the host's, so `http://192.168.1.10:8080` needs `192.168.1.10` in the list.
+
+Fix: add every name and address you use to Options, Web UI, Security, "Server domains" (`;` separated, no spaces, `localhost` is not accepted there), or make the reverse proxy pass a listed name (`proxy_set_header Host $host;` for nginx). The qBittorrent log in `/config/qBittorrent/data/logs/qbittorrent.log` names the rejected host. See [Host header validation](../../README.md#host-header-validation-dns-rebinding).
+
 ## Wrong date due to outdated seccomp
 ```sh
 / # date
